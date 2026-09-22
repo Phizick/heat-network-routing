@@ -87,6 +87,39 @@ public final class ExistingNetwork {
         }
     }
 
+    /** Линии сети в точке врезки: какие, сколько примыканий занято, наибольший ДУ (стык линий - R-TOP-05, R-CH-01). */
+    public static final class At {
+        public final int[] lines;
+        public final int occupancy;
+        public final int maxDn;
+
+        At(int[] lines, int occupancy, int maxDn) {
+            this.lines = lines;
+            this.occupancy = occupancy;
+            this.maxDn = maxDn;
+        }
+    }
+
+    public At at(Coordinate x, double tol) {
+        java.util.Set<Integer> lines = new java.util.LinkedHashSet<>();
+        for (Object o : segIndex.query(new Envelope(x.x - tol, x.x + tol, x.y - tol, x.y + tol))) {
+            Seg s = (Seg) o;
+            if (s.seg.distance(x) <= tol) {
+                lines.add(s.line);
+            }
+        }
+        int occupancy = 0;
+        int maxDn = 0;
+        for (int i : lines) {
+            Scenario.NetworkLine line = scenario.network.get(i);
+            boolean end = line.geom.getCoordinate().distance(x) <= tol
+                    || line.geom.getCoordinateN(line.geom.getNumPoints() - 1).distance(x) <= tol;
+            occupancy += end ? 1 : 2;
+            maxDn = Math.max(maxDn, line.dn);
+        }
+        return new At(lines.stream().mapToInt(Integer::intValue).toArray(), occupancy, maxDn);
+    }
+
     /** Связность по концам линий и камерам на линиях, для диагностики. */
     private int countComponents(double tol) {
         int n = scenario.network.size();

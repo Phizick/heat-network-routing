@@ -82,7 +82,7 @@ public final class Validator {
             int connections;
             switch (n.kind) {
                 case NEW_CHAMBER:
-                    connections = children + (n.root ? 2 : 1);
+                    connections = children + (n.root ? ctx.tieAt(n.c).occupancy : 1);
                     if (!n.root && children < 2) {
                         out.add("R-TOP-04: камера " + n.id + " без разветвления");
                     }
@@ -98,6 +98,26 @@ public final class Validator {
             }
             if (connections > rules.maxConnections()) {
                 out.add("R-TOP-05: у узла " + n.id + " " + connections + " примыканий");
+            }
+        }
+        // R-TIE-02: новая врезка в 10 м от существующей камеры, где хватает свободных примыканий
+        double radius = rules.props().getChambers().getExistingSnapRadiusM();
+        for (Net.Node n : net.nodes.values()) {
+            if (!n.root || n.kind != Net.Kind.NEW_CHAMBER) {
+                continue;
+            }
+            int children = net.childEdges(n.id).size();
+            for (int c = 0; c < ctx.scenario.chambers.size(); c++) {
+                double d = ctx.scenario.chambers.get(c).geom.getCoordinate().distance(n.c);
+                if (d > radius) {
+                    continue;
+                }
+                Net.Node used = net.existingChamberRoot(c);
+                int busy = ctx.network.occupancy[c] + (used == null ? 0 : net.childEdges(used.id).size());
+                if (busy + children <= rules.maxConnections()) {
+                    out.add(String.format("R-TIE-02: новая врезка в %.1f м от камеры %s со свободными примыканиями",
+                            d, ctx.scenario.chambers.get(c).id));
+                }
             }
         }
         Set<Integer> connected = new HashSet<>();
@@ -207,15 +227,24 @@ public final class Validator {
                                 e.id, e.dn, d, r.type, r.id, need));
                     }
                 }
+                int[] tieLines = parent.kind == Net.Kind.EXISTING_CHAMBER ? ctx.network.chamberLines[parent.chamber]
+                        : parent.root ? ctx.tieAt(parent.c).lines : new int[0];
                 for (int li = 0; li < ctx.scenario.network.size(); li++) {
                     Scenario.NetworkLine line = ctx.scenario.network.get(li);
-                    boolean tieLine = pi == parts.size() - 1 && (parent.line == li
-                            || (parent.kind == Net.Kind.EXISTING_CHAMBER && contains(ctx.network.chamberLines[parent.chamber], li)));
-                    if (tieLine || nearSpecial) {
+                    if (nearSpecial) {
                         continue;
                     }
                     double need = rules.offset(rules.props().getExistingNetworkCrossing(), e.dn) + half + rules.width(line.dn) / 2;
-                    double d = geom.distance(line.geom);
+                    LineString checked = geom;
+                    if (pi == parts.size() - 1 && contains(tieLines, li)) {
+                        // подход к точке врезки: отступ до своей линии не действует только на последних метрах
+                        double keep = part.length - ru.lct.heat.route.ObstacleLayer.approachLimit(need + 0.4);
+                        if (keep <= 1e-6) {
+                            continue;
+                        }
+                        checked = ctx.gf.createLineString(DepthProfiler.slice(part.coords, 0, keep).toArray(new Coordinate[0]));
+                    }
+                    double d = checked.distance(line.geom);
                     if (d + TOL < need) {
                         out.add(String.format("R-RST-03: ребро %d (ДУ %d) в %.2f м от сети %s, нужно %.2f м", e.id, e.dn, d, line.id, need));
                     }

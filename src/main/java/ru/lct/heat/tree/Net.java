@@ -95,6 +95,19 @@ public final class Net {
         return n;
     }
 
+    /** Принять состояние другой сети целиком (включая счётчик id, чтобы id не повторялись). */
+    public void assign(Net o) {
+        nodes.clear();
+        nodes.putAll(o.nodes);
+        edges.clear();
+        edges.putAll(o.edges);
+        unconnected.clear();
+        unconnected.putAll(o.unconnected);
+        notes.clear();
+        notes.addAll(o.notes);
+        nextId = o.nextId;
+    }
+
     public Node addNode(Kind kind, Coordinate c) {
         Node n = new Node(nextId++, kind, c);
         nodes.put(n.id, n);

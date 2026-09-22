@@ -38,8 +38,8 @@ public final class Evaluator {
         if (parent.kind == Net.Kind.EXISTING_CHAMBER) {
             return ctx.network.chamberLines[parent.chamber];
         }
-        if (parent.line >= 0) {
-            return new int[] {parent.line};
+        if (parent.root) {
+            return ctx.tieAt(parent.c).lines;
         }
         return null;
     }
@@ -97,7 +97,7 @@ public final class Evaluator {
 
         for (Net.Node n : net.nodes.values()) {
             if (n.kind == Net.Kind.NEW_CHAMBER) {
-                int maxDn = n.line >= 0 ? ctx.scenario.network.get(n.line).dn : 0;
+                int maxDn = n.root ? ctx.tieAt(n.c).maxDn : 0;
                 for (Net.Edge e : net.edges.values()) {
                     if (e.child == n.id || e.parent == n.id) {
                         maxDn = Math.max(maxDn, e.dn);

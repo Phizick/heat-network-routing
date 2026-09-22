@@ -45,6 +45,8 @@ public final class ObstacleLayer {
         Restriction rule;
         String type;
         int line = -1;
+        /** Полуширина зоны отступа (для ограничения длины подхода к точке врезки). */
+        double halfWidth;
     }
 
     static final class Edge {
@@ -108,8 +110,10 @@ public final class ObstacleLayer {
                 double dist = rules.offset(rule, dn) + pipeWidth / 2 + rule.getOwnWidth() / 2 + tol + margin;
                 Soft s = new Soft();
                 s.kind = simplified instanceof Polygonal ? SoftKind.POLYGON : SoftKind.LINE;
-                s.core = simplified;
+                // границы спецучастка и угол - по исходной геометрии, зона отступа - по упрощённой с запасом tol
+                s.core = r.geom;
                 s.zone = buffer(simplified, dist);
+                s.halfWidth = dist;
                 s.rule = rule;
                 s.type = r.type;
                 softs.add(s);
@@ -127,6 +131,7 @@ public final class ObstacleLayer {
             s.kind = SoftKind.LINE;
             s.core = line.geom;
             s.zone = buffer(line.geom, dist);
+            s.halfWidth = dist;
             s.rule = crossing;
             s.type = "heat_network";
             s.line = i;
@@ -371,10 +376,13 @@ public final class ObstacleLayer {
         List<SegInfo.Special> specials = new ArrayList<>();
         for (Object o : softIndex.query(seg.getEnvelopeInternal())) {
             Soft s = (Soft) o;
-            if (s.line >= 0 && contains(exemptLines, s.line)) {
+            if (!s.prep.intersects(seg)) {
                 continue;
             }
-            if (!s.prep.intersects(seg)) {
+            if (s.line >= 0 && contains(exemptLines, s.line)) {
+                if (!approachOk(s, a, b, seg)) {
+                    return null;
+                }
                 continue;
             }
             if (!crossSoft(s, a, b, seg, len, specials)) {
@@ -382,6 +390,26 @@ public final class ObstacleLayer {
             }
         }
         return new SegInfo(len, specials);
+    }
+
+    /**
+     * Подход к точке врезки на линии: коридор линии не проверяется только на последнем куске, который
+     * входит в зону и заканчивается в цели b, и не длиннее двух полуширин зоны (угол подхода ≳ 30°).
+     */
+    private boolean approachOk(Soft s, Coordinate a, Coordinate b, LineString seg) {
+        Geometry inZone = seg.intersection(s.zone);
+        for (int i = 0; i < inZone.getNumGeometries(); i++) {
+            Geometry piece = inZone.getGeometryN(i);
+            boolean endsAtB = piece.distance(gf.createPoint(b)) < 1e-6;
+            if (!endsAtB || piece.getLength() > 2 * s.halfWidth + 0.5) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static double approachLimit(double halfWidth) {
+        return 2 * halfWidth + 0.5;
     }
 
     private boolean crossSoft(Soft s, Coordinate a, Coordinate b, LineString seg, double len, List<SegInfo.Special> out) {
@@ -393,6 +421,9 @@ public final class ObstacleLayer {
         }
         double extra = s.rule.getExtraM();
         double minAngle = s.rule.getMinAngleDeg();
+        List<double[]> intervals = new ArrayList<>();
+        // куски отрезка внутри зоны отступа: обычной прокладки в них быть не может
+        List<double[]> zonePieces = pieces(seg.intersection(s.zone), a);
         if (s.kind == SoftKind.POLYGON) {
             Geometry inside = seg.intersection(s.core);
             if (inside.isEmpty()) {
@@ -401,21 +432,23 @@ public final class ObstacleLayer {
             if (minAngle > 0 && !anglesOk(s.core, a, b, minAngle)) {
                 return false;
             }
-            for (int i = 0; i < inside.getNumGeometries(); i++) {
-                Geometry piece = inside.getGeometryN(i);
-                double u0 = Double.MAX_VALUE;
-                double u1 = -Double.MAX_VALUE;
-                for (Coordinate c : piece.getCoordinates()) {
-                    double u = a.distance(c);
-                    u0 = Math.min(u0, u);
-                    u1 = Math.max(u1, u);
-                }
+            for (double[] core : pieces(inside, a)) {
+                double u0 = core[0];
+                double u1 = core[1];
                 double from = u0 - extra;
                 double to = u1 + extra;
+                // спецучасток покрывает и зону отступа: при косом пересечении она шире, чем полигон + extra
+                for (double[] z : zonePieces) {
+                    if (z[0] <= u1 + 1e-6 && z[1] >= u0 - 1e-6) {
+                        from = Math.min(from, z[0]);
+                        to = Math.max(to, z[1]);
+                    }
+                }
                 if (from < -1e-6 || to > len + 1e-6) {
                     return false; // спецучасток должен быть одним прямым отрезком (R-RST-05)
                 }
                 out.add(new SegInfo.Special(from, to, s.rule.getKSpec(), s.type));
+                intervals.add(new double[] {from, to});
             }
         } else {
             Geometry x = seg.intersection(s.core);
@@ -442,7 +475,40 @@ public final class ObstacleLayer {
                 return false;
             }
         }
+        if (s.kind == SoftKind.POLYGON) {
+            // R-RST-02/05: обычной прокладки в зоне отступа дороги быть не может - только спецучасток
+            for (double[] z : zonePieces) {
+                boolean covered = false;
+                for (double[] iv : intervals) {
+                    if (iv[0] <= z[0] + 1e-6 && iv[1] >= z[1] - 1e-6) {
+                        covered = true;
+                        break;
+                    }
+                }
+                if (!covered) {
+                    return false;
+                }
+            }
+        }
         return true;
+    }
+
+    /** Куски пересечения отрезка с геометрией как интервалы [от, до] метров от точки a. */
+    private static List<double[]> pieces(Geometry intersection, Coordinate a) {
+        List<double[]> out = new ArrayList<>();
+        for (int i = 0; i < intersection.getNumGeometries(); i++) {
+            double lo = Double.MAX_VALUE;
+            double hi = -Double.MAX_VALUE;
+            for (Coordinate c : intersection.getGeometryN(i).getCoordinates()) {
+                double u = a.distance(c);
+                lo = Math.min(lo, u);
+                hi = Math.max(hi, u);
+            }
+            if (hi >= lo) {
+                out.add(new double[] {lo, hi});
+            }
+        }
+        return out;
     }
 
     /** Угол между отрезком и контуром ограничения во всех точках пересечения (R-RST-06). */

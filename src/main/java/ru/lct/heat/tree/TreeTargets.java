@@ -97,8 +97,9 @@ final class TreeTargets implements TargetSet {
         int children = net.childEdges(n.id).size();
         switch (n.kind) {
             case NEW_CHAMBER:
-                // 1 примыкание к источнику (ребро вверх или линия насквозь = 2) + до 3 остальных
-                return n.root ? 2 + children + 1 <= rules.maxConnections() : children + 1 <= rules.maxConnections() - 1;
+                // врезка: примыкания линий в точке (насквозь = 2, стык - по концам); ветвление: 1 вверх + до 3
+                return n.root ? ctx.tieAt(n.c).occupancy + children + 1 <= rules.maxConnections()
+                        : children + 1 <= rules.maxConnections() - 1;
             case EXISTING_CHAMBER:
                 return ctx.network.occupancy[n.chamber] + children + 1 <= rules.maxConnections();
             default:
@@ -137,8 +138,8 @@ final class TreeTargets implements TargetSet {
                 after = Math.max(after, edgeNewDn.getOrDefault(e.id, e.dn));
             }
         }
-        if (node.line >= 0) {
-            int lineDn = ctx.scenario.network.get(node.line).dn;
+        if (node.root) {
+            int lineDn = ctx.tieAt(node.c).maxDn;
             before = Math.max(before, lineDn);
             after = Math.max(after, lineDn);
         }
@@ -164,8 +165,8 @@ final class TreeTargets implements TargetSet {
                 if (n.kind == Net.Kind.EXISTING_CHAMBER) {
                     score += rules.costScore(rules.existingTieInCost());
                     exempt = ctx.network.chamberLines[n.chamber];
-                } else if (n.line >= 0) {
-                    exempt = new int[] {n.line};
+                } else if (n.root) {
+                    exempt = ctx.tieAt(n.c).lines;
                 }
                 out.add(new Goal(Goal.Kind.TREE_NODE, n.c, score, n.id, exempt));
             }

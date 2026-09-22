@@ -118,6 +118,11 @@ public final class Context {
      * Слой препятствий для ДУ. Слои строятся на класс отступа (heat.geometry.clearance-classes):
      * ДУ класса получает отступы по верхнему ДУ класса - это консервативно и сильно экономит память.
      */
+    /** Линии, занятые примыкания и ДУ в точке врезки новой камеры. */
+    public ExistingNetwork.At tieAt(Coordinate x) {
+        return network.at(x, Math.max(rules.props().getGeometry().getTopologySnapToleranceM(), 0.05));
+    }
+
     public synchronized ObstacleLayer layer(int dn) {
         return layers.computeIfAbsent(clearanceClass(dn), d -> new ObstacleLayer(this, d));
     }

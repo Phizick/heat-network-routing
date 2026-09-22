@@ -36,14 +36,21 @@ public final class ExistingTargets implements TargetSet {
     private final int[] usedChildren;
     /** Запрещённые зоны врезки (для содержательно другого варианта). */
     private final List<double[]> forbidden;
+    /** Уже созданные врезки новой сети: вторую камеру в той же точке не ставим (к ним - через TreeTargets). */
+    private final List<Coordinate> roots;
     private final double minNode;
 
     public ExistingTargets(Context ctx, int dnNew, int[] usedChildren, List<double[]> forbidden) {
+        this(ctx, dnNew, usedChildren, forbidden, List.of());
+    }
+
+    public ExistingTargets(Context ctx, int dnNew, int[] usedChildren, List<double[]> forbidden, List<Coordinate> roots) {
         this.ctx = ctx;
         this.rules = ctx.rules;
         this.dnNew = dnNew;
         this.usedChildren = usedChildren;
         this.forbidden = forbidden;
+        this.roots = roots;
         int minLineDn = Integer.MAX_VALUE;
         for (ExistingNetwork.Seg s : ctx.network.segs) {
             minLineDn = Math.min(minLineDn, s.dn);
@@ -96,8 +103,13 @@ public final class ExistingTargets implements TargetSet {
             addChamber(nearest, out);
             return;
         }
-        double cost = rules.newChamberCost(Math.max(s.dn, dnNew));
-        out.add(new Goal(Goal.Kind.NEW_ON_LINE, x, rules.costScore(cost), s.line, new int[] {s.line}));
+        // стык линий: камера получает все примыкания и наибольший ДУ линий в точке (R-TOP-05, R-CH-01)
+        ExistingNetwork.At at = ctx.tieAt(x);
+        if (at.occupancy + 1 > rules.maxConnections()) {
+            return;
+        }
+        double cost = rules.newChamberCost(Math.max(Math.max(at.maxDn, s.dn), dnNew));
+        out.add(new Goal(Goal.Kind.NEW_ON_LINE, x, rules.costScore(cost), s.line, at.lines.length > 0 ? at.lines : new int[] {s.line}));
     }
 
     private void addChamber(int c, List<Goal> out) {
@@ -114,6 +126,11 @@ public final class ExistingTargets implements TargetSet {
     }
 
     private boolean isForbidden(Coordinate x) {
+        for (Coordinate r : roots) {
+            if (r.distance(x) < 0.5) {
+                return true;
+            }
+        }
         for (double[] f : forbidden) {
             if (Math.hypot(x.x - f[0], x.y - f[1]) < f[2]) {
                 return true;

@@ -80,6 +80,8 @@ public final class Router {
     private final double maxTurnCos;
     private final double turnPenalty;
     private final int maxExpansions;
+    /** Последний поиск оборван по лимиту раскрытий, а не исчерпал граф (R-UNC-01: причина важна). */
+    public boolean limitHit;
 
     public Router(ObstacleLayer layer, int maxExpansions) {
         this.layer = layer;
@@ -121,6 +123,7 @@ public final class Router {
                 continue;
             }
             if (++expansions > maxExpansions) {
+                limitHit = true;
                 return null;
             }
             Coordinate v = coord(s.node, start, n);

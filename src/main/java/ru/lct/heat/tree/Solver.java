@@ -109,12 +109,19 @@ public final class Solver {
         }
         ObstacleLayer layer = ctx.layer(dn);
         TargetSet targets = ExistingTargets.union(
-                new ExistingTargets(ctx, dn, usedExistingChambers(net), forbidden),
+                new ExistingTargets(ctx, dn, usedExistingChambers(net), forbidden, roots(net, null)),
                 new TreeTargets(net, ctx, layer, oks.flow, dn));
         Blockers blockers = new Blockers(net.segments(null));
-        for (Context.Port port : ports) {
-            Router.Result r = new Router(layer, MAX_EXPANSIONS).route(Router.Start.of(port), targets, blockers);
-            if (r != null) {
+        boolean limitHit = false;
+        for (int attempt = 0; attempt < 2; attempt++) {
+            int limit = attempt == 0 ? MAX_EXPANSIONS : MAX_EXPANSIONS * 2;
+            for (Context.Port port : ports) {
+                Router router = new Router(layer, limit);
+                Router.Result r = router.route(Router.Start.of(port), targets, blockers);
+                limitHit |= router.limitHit;
+                if (r == null) {
+                    continue;
+                }
                 if (port.note != null) {
                     net.notes.add("ОКС " + oks.id + ": " + port.note);
                 }
@@ -122,8 +129,13 @@ public final class Solver {
                 net.unconnected.remove(k);
                 return true;
             }
+            if (!limitHit) {
+                break; // граф исчерпан: больший лимит не поможет
+            }
         }
-        net.unconnected.put(k, "допустимый маршрут до сети не найден ни из одного выхода здания");
+        net.unconnected.put(k, limitHit
+                ? "поиск маршрута прерван по лимиту раскрытий (граф не исчерпан)"
+                : "допустимый маршрут до сети не найден ни из одного выхода здания");
         return false;
     }
 
@@ -159,6 +171,16 @@ public final class Solver {
         e.fromOks = port.fixed;
         e.dn = rules.minDnForFlow(ctx.scenario.oks.get(k).flow);
         e.flow = ctx.scenario.oks.get(k).flow;
+    }
+
+    private static List<Coordinate> roots(Net net, Integer except) {
+        List<Coordinate> out = new ArrayList<>();
+        for (Net.Node n : net.nodes.values()) {
+            if (n.root && (except == null || n.id != except)) {
+                out.add(n.c);
+            }
+        }
+        return out;
     }
 
     private int[] usedExistingChambers(Net net) {
@@ -223,9 +245,12 @@ public final class Solver {
 
     // ---------------------------------------------------------------- ДУ, проверка, перетрассировка
 
-    /** Подбор ДУ и перепроверка геометрии с новыми отступами, до устойчивого состояния. */
+    /**
+     * Подбор ДУ и перепроверка геометрии с новыми отступами, до устойчивого состояния.
+     * Перестроение поддерева - дорогая операция, поэтому только на финальной сборке варианта.
+     */
     void sizeAndValidate(Net net) {
-        sizeAndValidate(net, true);
+        sizeAndValidate(net, false);
     }
 
     private void sizeAndValidate(Net net, boolean allowRebuild) {
@@ -261,7 +286,7 @@ public final class Solver {
                     sizeAndValidate(net, false);
                 }
                 net.notes.add("перестроено поддерево из " + oks.size() + " ОКС после роста ДУ");
-                changed = true;
+                return; // перестроение делаем один раз за сборку варианта
             }
             if (!changed) {
                 return;
@@ -310,9 +335,9 @@ public final class Solver {
         // врезка, к которой идёт только это ребро, может переехать в другое место сети
         boolean movableRoot = parent.root && parent.kind == Net.Kind.NEW_CHAMBER && net.childEdges(parent.id).size() == 1;
         int[] exempt = parent.kind == Net.Kind.EXISTING_CHAMBER ? ctx.network.chamberLines[parent.chamber]
-                : parent.line >= 0 ? new int[] {parent.line} : null;
+                : parent.root ? ctx.tieAt(parent.c).lines : null;
         TargetSet target = movableRoot
-                ? new ExistingTargets(ctx, dn, usedExistingChambers(net), List.of())
+                ? new ExistingTargets(ctx, dn, usedExistingChambers(net), List.of(), roots(net, parent.id))
                 : pointTarget(parent.c, exempt);
         Blockers blockers = new Blockers(net.segments(e.id));
         for (Router.Start start : starts) {
@@ -414,7 +439,8 @@ public final class Solver {
                     trial.remove(i);
                     List<Coordinate> saved = e.path;
                     e.path = trial;
-                    if (evaluator.check(net, e, i - 1) != null) {
+                    if (anglesOk(trial) && evaluator.check(net, e, i - 1) != null
+                            && !new Blockers(net.segments(e.id)).blocks(trial.get(i - 1), trial.get(i), i - 1 == 0, i == trial.size() - 1)) {
                         continue;
                     }
                     e.path = saved;
@@ -479,7 +505,7 @@ public final class Solver {
                         : "нет допустимого выхода из здания: точка окружена запретными зонами");
                 continue;
             }
-            TargetSet targets = new ExistingTargets(ctx, dn, usedExistingChambers(net), forbidden);
+            TargetSet targets = new ExistingTargets(ctx, dn, usedExistingChambers(net), forbidden, roots(net, null));
             Blockers blockers = new Blockers(net.segments(null));
             boolean done = false;
             for (Context.Port port : ports) {
@@ -645,9 +671,51 @@ public final class Solver {
         return selectVariants(pool);
     }
 
+    /**
+     * R-TIE-02 после локального поиска: если новая врезка в 10 м от существующей камеры, где теперь есть
+     * свободные примыкания для всех её участков, участки переподключаются к этой камере.
+     */
+    void snapTieInsToChambers(Net net) {
+        double radius = rules.props().getChambers().getExistingSnapRadiusM();
+        for (Net.Node root : new ArrayList<>(net.nodes.values())) {
+            if (!root.root || root.kind != Net.Kind.NEW_CHAMBER || !net.nodes.containsKey(root.id)) {
+                continue;
+            }
+            List<Net.Edge> children = net.childEdges(root.id);
+            int[] used = usedExistingChambers(net);
+            for (int c = 0; c < ctx.scenario.chambers.size(); c++) {
+                Coordinate cc = ctx.scenario.chambers.get(c).geom.getCoordinate();
+                if (cc.distance(root.c) > radius || ctx.network.occupancy[c] + used[c] + children.size() > rules.maxConnections()) {
+                    continue;
+                }
+                Net trial = net.copy();
+                Net.Node target = trial.existingChamberRoot(c);
+                if (target == null) {
+                    target = trial.addNode(Net.Kind.EXISTING_CHAMBER, cc);
+                    target.root = true;
+                    target.chamber = c;
+                }
+                boolean ok = true;
+                for (Net.Edge e : trial.childEdges(root.id)) {
+                    e.parent = target.id;
+                    if (!reroute(trial, e)) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (ok) {
+                    trial.nodes.remove(root.id);
+                    net.assign(trial);
+                    break;
+                }
+            }
+        }
+    }
+
     private Candidate finish(Net net, String strategy) {
+        snapTieInsToChambers(net);
         straighten(net);
-        sizeAndValidate(net);
+        sizeAndValidate(net, true);
         Eval e = evaluator.evaluate(net);
         log.info("{}: S={} трубы={} камеры={} врезки={} L={} врезок={} неподкл={}", strategy, round(e.score),
                 round(e.pipeCost / 1e6), round(e.chamberCost / 1e6), round(e.existingTieInCost / 1e6), round(e.length),
