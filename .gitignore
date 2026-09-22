@@ -1,0 +1,8 @@
+target/
+.m2/
+.idea/
+*.iml
+.DS_Store
+.claude/docs-sync.log
+.claude/docs-sync.lock
+.claude/docs-sync.stamp

@@ -1,0 +1,42 @@
+# Совместим с docker-compose 1.29.2 (требование ТЗ) и с docker compose v2+.
+version: "3.8"
+
+services:
+  db:
+    # мультиархитектурная сборка (amd64 + arm64): официальный postgis/postgis есть только под amd64,
+    # под эмуляцией на Apple Silicon бэкенды Postgres падают
+    image: ${POSTGIS_IMAGE:-imresamu/postgis:16-3.4}
+    environment:
+      POSTGRES_DB: heat
+      POSTGRES_USER: heat
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-heat}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heat -d heat"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  app:
+    image: ${APP_IMAGE:-heat-routing:local}
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/heat
+      DB_USER: heat
+      DB_PASSWORD: ${DB_PASSWORD:-heat}
+      JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=75}
+    ports:
+      - "${APP_PORT:-8090}:8080"
+    volumes:
+      # временный диск для входных файлов до 3 ГБ
+      - uploads:/var/lib/heat
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  uploads:

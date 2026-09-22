@@ -1,0 +1,61 @@
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  # Раннер монтирует docker.sock хоста: сборка и деплой идут в Docker хоста, без dind.
+  DOCKER_HOST: unix:///var/run/docker.sock
+  APP_IMAGE: heat-routing:$CI_COMMIT_SHORT_SHA
+
+test:
+  stage: test
+  image: maven:3.8.8-eclipse-temurin-11
+  variables:
+    MAVEN_OPTS: -Dmaven.repo.local=$CI_PROJECT_DIR/.m2
+  cache:
+    key: m2
+    paths:
+      - .m2/
+  script:
+    - mvn -B test
+  artifacts:
+    when: always
+    reports:
+      junit: target/surefire-reports/TEST-*.xml
+
+build:
+  stage: build
+  image: docker:24
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  script:
+    - docker build -t "$APP_IMAGE" -t heat-routing:local .
+    - |
+      if [ -n "$CI_REGISTRY" ]; then
+        docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+        docker tag "$APP_IMAGE" "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+        docker tag "$APP_IMAGE" "$CI_REGISTRY_IMAGE:latest"
+        docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+        docker push "$CI_REGISTRY_IMAGE:latest"
+      fi
+
+deploy:
+  stage: deploy
+  image: docker:24
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  environment:
+    name: local
+    url: http://localhost:8090/swagger-ui.html
+  script:
+    - docker compose -p heat-routing up -d --no-build
+    - |
+      for i in $(seq 1 60); do
+        if docker compose -p heat-routing logs --since 5m app 2>&1 | grep -q "Started HeatRoutingApplication"; then
+          echo "app запущен"; exit 0
+        fi
+        sleep 3
+      done
+      docker compose -p heat-routing logs --tail 200 app
+      exit 1
