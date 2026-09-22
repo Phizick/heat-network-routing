@@ -98,7 +98,7 @@ public final class Router {
         double g0 = 0;
         if (start.fixed) {
             SegInfo first = layer.check(start.p, start.e, start.own, null);
-            if (first == null || blockers.blocks(start.p, start.e)) {
+            if (first == null || blockers.blocks(start.p, start.e, true, false)) {
                 return null;
             }
             g0 = layer.segScore(first);
@@ -125,6 +125,8 @@ public final class Router {
             }
             Coordinate v = coord(s.node, start, n);
             Coordinate from = s.prev == preNode ? (start.fixed ? start.p : null) : coord(s.prev, start, n);
+            // касаться сети можно только в стартовом узле (перетрассировка от камеры) и в цели
+            boolean atStart = s.node == startNode && !start.fixed;
 
             goals.clear();
             targets.candidates(v, goals);
@@ -133,7 +135,7 @@ public final class Router {
                     continue;
                 }
                 SegInfo info = layer.check(v, goal.point, -1, goal.exemptLines);
-                if (info == null || blockers.blocks(v, goal.point)) {
+                if (info == null || blockers.blocks(v, goal.point, atStart, true)) {
                     continue;
                 }
                 double g = s.g + layer.segScore(info) + goal.nodeScore + (from != null && turned(from, v, goal.point) ? turnPenalty : 0);
@@ -146,7 +148,7 @@ public final class Router {
                 if (from != null && !turnOk(from, v, w)) {
                     continue;
                 }
-                if (blockers.blocks(v, w)) {
+                if (blockers.blocks(v, w, atStart, false)) {
                     continue;
                 }
                 double g = s.g + e.cost + (from != null && turned(from, v, w) ? turnPenalty : 0);

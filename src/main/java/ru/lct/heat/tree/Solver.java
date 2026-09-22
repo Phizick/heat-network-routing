@@ -332,7 +332,7 @@ public final class Solver {
                     e.path = trial;
                     Blockers blockers = new Blockers(net.segments(e.id));
                     boolean ok = evaluator.check(net, e, i - 1) != null
-                            && !blockers.blocks(trial.get(i - 1), trial.get(i));
+                            && !blockers.blocks(trial.get(i - 1), trial.get(i), i - 1 == 0, i == trial.size() - 1);
                     if (ok) {
                         changed = true;
                         break;

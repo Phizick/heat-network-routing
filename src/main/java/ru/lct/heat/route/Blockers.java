@@ -23,8 +23,11 @@ public final class Blockers {
         index.build();
     }
 
-    /** true, если a→b пересекает новую сеть где-то, кроме своих концов. */
-    public boolean blocks(Coordinate a, Coordinate b) {
+    /**
+     * true, если a→b пересекает или касается новой сети (R-TOP-06). Касание допустимо только
+     * в концах, где трасса законно примыкает к сети: allowA - в начале (узел-ребёнок), allowB - в цели.
+     */
+    public boolean blocks(Coordinate a, Coordinate b, boolean allowA, boolean allowB) {
         if (empty) {
             return false;
         }
@@ -34,18 +37,19 @@ public final class Blockers {
             if (seg.distance(s) > 1e-7) {
                 continue;
             }
+            if (collinearOverlap(seg, s)) {
+                return true;
+            }
             Coordinate x = seg.intersection(s);
             if (x == null) {
-                // параллельное наложение
                 return true;
             }
-            if (x.distance(a) > 1e-6 && x.distance(b) > 1e-6) {
-                return true;
+            boolean atA = x.distance(a) <= 1e-6;
+            boolean atB = x.distance(b) <= 1e-6;
+            if ((atA && allowA) || (atB && allowB)) {
+                continue;
             }
-            // касание в конце: запрещаем наложение вдоль (коллинеарные отрезки)
-            if (seg.distance(s) < 1e-7 && collinearOverlap(seg, s)) {
-                return true;
-            }
+            return true;
         }
         return false;
     }

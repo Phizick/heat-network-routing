@@ -44,6 +44,16 @@ class SolverTest {
                     c.net.unconnected, e.invalidSegments, c.net.notes);
         }
         Validator validator = new Validator(ctx);
+        java.util.Map<Integer, List<String>> validation = new java.util.HashMap<>();
+        for (int v = 0; v < variants.size(); v++) {
+            validation.put(v, validator.validate(variants.get(v).net, variants.get(v).eval));
+        }
+        try {
+            Object fc = new ru.lct.heat.solve.GeoJsonExporter(ctx, "EPSG:32637").export(variants, validation);
+            new com.fasterxml.jackson.databind.ObjectMapper().writeValue(new java.io.File("target/solution.geojson"), fc);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
         for (Solver.Candidate c : variants) {
             List<String> errors = validator.validate(c.net, c.eval);
             System.out.println(c.strategy + " проверка: " + errors);
