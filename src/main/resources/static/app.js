@@ -17,9 +17,9 @@ async function api(url, opts) {
 // ---------------------------------------------------------------- карта
 
 const map = L.map('map', { preferCanvas: true }).setView([55.698, 37.64], 15);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  maxZoom: 20,
-  attribution: '&copy; OpenStreetMap, &copy; CARTO',
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
 }).addTo(map);
 
 const RESTRICTION_STYLE = {
@@ -76,8 +76,8 @@ function drawInput(fc) {
     filter: (f) => ['heat_network', 'heat_chamber', 'source'].includes(f.properties.object_type),
     style: (f) => ({ color: '#c92a2a', weight: 2 + Math.min(4, (f.properties.diameter || 300) / 150), opacity: 0.85 }),
     pointToLayer: (f, ll) => f.properties.object_type === 'source'
-      ? L.circleMarker(ll, { radius: 9, color: '#c92a2a', fillColor: '#ffe066', fillOpacity: 1, weight: 3 })
-      : L.circleMarker(ll, { radius: 5, color: '#c92a2a', fillColor: '#fff', fillOpacity: 1, weight: 2 }),
+      ? L.circleMarker(ll, { radius: 8, color: '#c92a2a', fillColor: '#ffe066', fillOpacity: 1, weight: 3 })
+      : L.circleMarker(ll, { radius: 3.5, color: '#c92a2a', fillColor: '#fff', fillOpacity: 1, weight: 1.5 }),
     onEachFeature: (f, l) => l.bindPopup(popup(f.properties, {
       heat_network: 'Существующая сеть', heat_chamber: 'Существующая камера', source: 'Источник',
     }[f.properties.object_type])),
@@ -86,7 +86,7 @@ function drawInput(fc) {
   L.geoJSON(fc, {
     filter: (f) => f.properties.object_type === 'oks_connection_point',
     pointToLayer: (f, ll) => L.circleMarker(ll, {
-      radius: 4 + Math.sqrt(f.properties.flow_tph || 1) * 0.9, color: '#d9480f', fillColor: '#ff922b', fillOpacity: 0.9, weight: 2,
+      radius: 3 + Math.sqrt(f.properties.flow_tph || 1) * 0.55, color: '#d9480f', fillColor: '#ff922b', fillOpacity: 0.9, weight: 1.5,
     }),
     onEachFeature: (f, l) => {
       l.bindPopup(popup(f.properties, 'Точка подключения ОКС'));
@@ -95,7 +95,7 @@ function drawInput(fc) {
   }).addTo(layers.oks);
 
   const bounds = L.featureGroup([layers.network, layers.oks]).getBounds();
-  if (bounds.isValid()) map.fitBounds(bounds.pad(0.15));
+  if (bounds.isValid()) map.fitBounds(bounds.pad(0.05));
 }
 
 let resultFc = null;
@@ -125,9 +125,9 @@ function drawResult() {
       }
       const tieIn = f.properties.chamber_role === 'tie_in';
       return L.circleMarker(ll, {
-        radius: tieIn ? 8 : 6,
+        radius: tieIn ? 5.5 : 4,
         color: other ? '#adb5bd' : (tieIn ? '#c92a2a' : '#1971c2'),
-        fillColor: '#fff', fillOpacity: 1, weight: 3,
+        fillColor: '#fff', fillOpacity: 1, weight: 2.5,
       });
     },
     onEachFeature: (f, l) => l.bindPopup(popup(f.properties, {
@@ -258,9 +258,9 @@ function selectVariant(vid, sum) {
   const unconnected = Object.entries(sp.unconnected_reasons || {});
   $('variantDetails').innerHTML = `
     <b>Вариант ${v.rank}</b> (стратегия: ${esc(v.strategy)})<br>
-    трубы: <b>${fmt(v.pipe_cost / 1e6, 2)}</b> млн ₽ · камеры: <b>${fmt(v.chamber_construction_cost / 1e6, 1)}</b> млн ₽
+    трубы: <b>${fmt(v.pipe_cost / 1e6, 2)}</b> млн руб. · камеры: <b>${fmt(v.chamber_construction_cost / 1e6, 1)}</b> млн руб.
     · врезки в сущ. камеры: <b>${v.existing_chamber_tie_in_count}</b><br>
-    итоговая стоимость C: <b>${fmt(v.calculated_cost / 1e6, 2)}</b> млн ₽ · длина L: <b>${fmt(v.new_network_length, 1)}</b> м
+    итоговая стоимость C: <b>${fmt(v.calculated_cost / 1e6, 2)}</b> млн руб. · длина L: <b>${fmt(v.new_network_length, 1)}</b> м
     ${unconnected.length ? `<br><span class="err">Не подключены: ${unconnected.map(([k, r]) => esc(k) + ' (' + esc(r) + ')').join('; ')}</span>` : '<br>Подключены все ОКС'}
     ${errs.length ? `<br><span class="err">Нарушения:</span><ul>${errs.map((e) => '<li>' + esc(e) + '</li>').join('')}</ul>` : '<br><span class="ok">Проверка правил пройдена</span>'}
     ${v.notes && v.notes.length ? `<br>Заметки:<ul>${v.notes.map((e) => '<li>' + esc(e) + '</li>').join('')}</ul>` : ''}`;

@@ -3,6 +3,16 @@ stages:
   - build
   - deploy
 
+# Сборка и деплой только при изменении кода: коммит с одной документацией не перезапускает сервис
+.code-changes: &code-changes
+  - if: '$CI_COMMIT_BRANCH == "main"'
+    changes:
+      - src/**/*
+      - pom.xml
+      - Dockerfile
+      - docker-compose.yml
+      - .gitlab-ci.yml
+
 variables:
   # Раннер монтирует docker.sock хоста: сборка и деплой идут в Docker хоста, без dind.
   DOCKER_HOST: unix:///var/run/docker.sock
@@ -17,6 +27,7 @@ test:
     key: m2
     paths:
       - .m2/
+  rules: *code-changes
   script:
     - mvn -B test
   artifacts:
@@ -27,8 +38,7 @@ test:
 build:
   stage: build
   image: docker:24
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
+  rules: *code-changes
   # Образ остаётся в Docker хоста, deploy берёт его оттуда. Push в registry не делаем:
   # демон в Docker VM не достаёт до localhost:5060 хоста.
   script:
@@ -37,8 +47,7 @@ build:
 deploy:
   stage: deploy
   image: docker:24
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
+  rules: *code-changes
   environment:
     name: local
     url: http://localhost:8090/swagger-ui.html

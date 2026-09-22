@@ -94,3 +94,6 @@ tbody tr.active { background: var(--accent-soft); }
   body { flex-direction: column; }
   #panel { width: 100%; max-height: 45vh; border-right: none; border-bottom: 1px solid var(--line); }
 }
+
+/* приглушённая подложка: сеть и ограничения читаются лучше */
+.leaflet-tile-pane { filter: grayscale(0.85) brightness(1.08) contrast(0.9); }
