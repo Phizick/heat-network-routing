@@ -727,7 +727,11 @@ public final class Solver {
         return Math.round(v * 100) / 100.0;
     }
 
-    /** До N вариантов по возрастанию S, каждый отличается от уже выбранных (R-VAR-02). */
+    /**
+     * До N вариантов по возрастанию S, каждый отличается от уже выбранных (R-VAR-02).
+     * Если разных вариантов не набралось, порог различия ослабляется: лучше показать
+     * похожие решения, чем одно.
+     */
     List<Candidate> selectVariants(List<Candidate> pool) {
         List<Candidate> sorted = new ArrayList<>(pool);
         sorted.sort(Comparator.comparingDouble(c -> c.eval.rankScore()));
@@ -738,15 +742,26 @@ public final class Solver {
         if (sorted.stream().anyMatch(c -> c.eval.invalidSegments == 0)) {
             sorted.removeIf(c -> c.eval.invalidSegments > 0);
         }
-        List<Candidate> out = new ArrayList<>();
         HeatProperties.Variants v = rules.props().getVariants();
+        List<Candidate> out = List.of();
+        for (double threshold = v.getMinDifference(); ; threshold /= 2) {
+            out = pick(sorted, threshold, v);
+            if (out.size() >= Math.min(2, sorted.size()) || threshold < 0.005) {
+                break;
+            }
+        }
+        return out;
+    }
+
+    private List<Candidate> pick(List<Candidate> sorted, double threshold, HeatProperties.Variants v) {
+        List<Candidate> out = new ArrayList<>();
         for (Candidate c : sorted) {
             if (out.size() >= v.getMaxCount()) {
                 break;
             }
             boolean distinct = true;
             for (Candidate chosen : out) {
-                if (difference(c.net, chosen.net, v.getCorridorBufferM()) < v.getMinDifference()) {
+                if (difference(c.net, chosen.net, v.getCorridorBufferM()) < threshold) {
                     distinct = false;
                     break;
                 }
