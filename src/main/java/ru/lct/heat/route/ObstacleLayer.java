@@ -423,7 +423,13 @@ public final class ObstacleLayer {
         double minAngle = s.rule.getMinAngleDeg();
         List<double[]> intervals = new ArrayList<>();
         // куски отрезка внутри зоны отступа: обычной прокладки в них быть не может
-        List<double[]> zonePieces = pieces(seg.intersection(s.zone), a);
+        Geometry inZone = seg.intersection(s.zone);
+        for (int i = 0; i < inZone.getNumGeometries(); i++) {
+            if (!inZone.getGeometryN(i).intersects(s.core)) {
+                return false; // проход вдоль ограничения в его зоне отступа
+            }
+        }
+        List<double[]> zonePieces = pieces(inZone, a);
         if (s.kind == SoftKind.POLYGON) {
             Geometry inside = seg.intersection(s.core);
             if (inside.isEmpty()) {
@@ -468,13 +474,6 @@ public final class ObstacleLayer {
             }
         }
         // каждая часть отрезка в зоне отступа должна быть частью перехода, а не проходом вдоль
-        Geometry inZone = seg.intersection(s.zone);
-        for (int i = 0; i < inZone.getNumGeometries(); i++) {
-            Geometry piece = inZone.getGeometryN(i);
-            if (!piece.intersects(s.core)) {
-                return false;
-            }
-        }
         if (s.kind == SoftKind.POLYGON) {
             // R-RST-02/05: обычной прокладки в зоне отступа дороги быть не может - только спецучасток
             for (double[] z : zonePieces) {

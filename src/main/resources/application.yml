@@ -133,7 +133,7 @@ heat:
     penalty-per-tph: 500000
 
   solver:
-    time-budget-s: 60
+    time-budget-s: 45
     greedy-restarts: 8
     seed: 42
     max-sizing-iterations: 10
@@ -141,7 +141,7 @@ heat:
 
   variants:
     max-count: 3
-    min-difference: 0.2
+    min-difference: 0.12
     corridor-buffer-m: 5
 
   # Раздел 8 docs/rules.md: режим с глубиной
