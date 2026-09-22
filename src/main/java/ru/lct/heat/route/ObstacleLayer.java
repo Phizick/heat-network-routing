@@ -80,6 +80,8 @@ public final class ObstacleLayer {
     /** Соседи вершины препятствия по контуру (для отсечения некасательных рёбер) или null. */
     final List<Coordinate[]> nodeRing = new ArrayList<>();
     private final List<List<Edge>> visibility = new ArrayList<>();
+    private final STRtree nodeIndex = new STRtree();
+    private final double radius;
 
     ObstacleLayer(Context ctx, int dn) {
         this.ctx = ctx;
@@ -88,6 +90,7 @@ public final class ObstacleLayer {
         this.gf = ctx.gf;
         this.pipeWidth = rules.width(dn);
         HeatProperties.Geometry gp = rules.props().getGeometry();
+        this.radius = gp.getVisibilityRadiusM();
         double tol = gp.getSimplifyToleranceM();
         double margin = gp.getClearanceMarginM();
 
@@ -167,9 +170,24 @@ public final class ObstacleLayer {
                     : s.zone.buffer(0.3, 2).getBoundary();
             sample(ring, gp.getRoadSampleStepM());
         }
+        // редкая сетка на открытых местах: видимость ограничена радиусом, длинные пути идут через неё
+        double step = radius / 2.5;
+        for (double x = ctx.area.getMinX() + step / 2; x < ctx.area.getMaxX(); x += step) {
+            for (double y = ctx.area.getMinY() + step / 2; y < ctx.area.getMaxY(); y += step) {
+                addNode(new Coordinate(x, y), null);
+            }
+        }
         for (int i = 0; i < nodes.size(); i++) {
             visibility.add(null);
+            nodeIndex.insert(new Envelope(nodes.get(i)), i);
         }
+        nodeIndex.build();
+    }
+
+    /** Узлы в радиусе видимости от точки. */
+    @SuppressWarnings("unchecked")
+    private List<Integer> near(Coordinate a) {
+        return nodeIndex.query(new Envelope(a.x - radius, a.x + radius, a.y - radius, a.y + radius));
     }
 
     private double distOf(Soft s) {
@@ -269,7 +287,7 @@ public final class ObstacleLayer {
         List<Edge> out = new ArrayList<>();
         Coordinate a = nodes.get(i);
         Coordinate[] ra = nodeRing.get(i);
-        for (int j = 0; j < nodes.size(); j++) {
+        for (int j : near(a)) {
             if (j == i) {
                 continue;
             }
@@ -289,7 +307,7 @@ public final class ObstacleLayer {
     /** Все рёбра из произвольной точки (порт ОКС, камера) к узлам графа. */
     List<Edge> neighborsOf(Coordinate a) {
         List<Edge> out = new ArrayList<>();
-        for (int j = 0; j < nodes.size(); j++) {
+        for (int j : near(a)) {
             Coordinate b = nodes.get(j);
             if (!tangent(b, a, nodeRing.get(j))) {
                 continue;

@@ -109,6 +109,8 @@ public class HeatProperties {
         private double clearanceMarginM = 0.05;
         /** Шаг вспомогательных узлов вдоль дорог для поворота сразу после спецперехода. */
         private double roadSampleStepM = 10;
+        /** Радиус видимости в графе: дальние узлы связываются через промежуточные (масштаб на больших данных). */
+        private double visibilityRadiusM = 600;
         /** Штраф за поворот в метрах трассы: только для выбора пути, в стоимость не входит. */
         private double turnPenaltyM = 1.0;
     }
