@@ -101,7 +101,9 @@ curl -s "http://localhost:8090/api/solutions/$SID/geojson?download=true" -o resu
 ### GET /api/solutions/{id}/geojson
 
 Выход по разделу 7 ТЗ: один `FeatureCollection` в WGS 84 со всеми вариантами (`variant_id` = `v1`…`v3`,
-`v1` - лучший по S). `?download=true` - скачивание файлом.
+`v1` - лучший по S). `?download=true` - скачивание файлом. `?mode=depth` - режим с глубиной: свои варианты
+и ранжирование, у участков заполнены `depth_start`/`depth_end` (глубина верха габарита, м) и `k_depth`.
+Сводка режима - `summary.depthVariants` в `GET /api/solutions/{id}`.
 
 | `object_type` | Геометрия | Свойства |
 |---|---|---|
