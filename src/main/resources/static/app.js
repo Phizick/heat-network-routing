@@ -275,16 +275,33 @@ $('file').addEventListener('change', () => {
   $('upload').disabled = !f;
 });
 
+async function uploadFile(f) {
+  const body = new FormData();
+  body.append('file', f);
+  const r = await api('/api/datasets', { method: 'POST', body });
+  await loadDatasets(r.id);
+}
+
+$('demo').addEventListener('click', async () => {
+  $('demo').disabled = true;
+  $('datasetInfo').innerHTML = '<span class="spinner"></span> загрузка демо-набора…';
+  try {
+    const blob = await (await fetch('/demo-dataset.geojson')).blob();
+    await uploadFile(new File([blob], 'demo-dataset-with-roads.geojson', { type: 'application/geo+json' }));
+  } catch (e) {
+    $('datasetInfo').innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  } finally {
+    $('demo').disabled = false;
+  }
+});
+
 $('upload').addEventListener('click', async () => {
   const f = $('file').files[0];
   if (!f) return;
   $('upload').disabled = true;
   $('datasetInfo').innerHTML = '<span class="spinner"></span> загрузка файла…';
   try {
-    const body = new FormData();
-    body.append('file', f);
-    const r = await api('/api/datasets', { method: 'POST', body });
-    await loadDatasets(r.id);
+    await uploadFile(f);
   } catch (e) {
     $('datasetInfo').innerHTML = `<span class="err">${esc(e.message)}</span>`;
   } finally {

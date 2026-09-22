@@ -199,17 +199,60 @@ public final class Solver {
 
     /** Подбор ДУ и перепроверка геометрии с новыми отступами, до устойчивого состояния. */
     void sizeAndValidate(Net net) {
+        sizeAndValidate(net, true);
+    }
+
+    private void sizeAndValidate(Net net, boolean allowRebuild) {
         for (int iter = 0; iter < cfg.getMaxSizingIterations(); iter++) {
             sizer.size(net);
             boolean changed = false;
+            List<Integer> failed = new ArrayList<>();
             for (Net.Edge e : new ArrayList<>(net.edges.values())) {
-                if (!edgeValid(net, e)) {
-                    changed |= reroute(net, e);
+                if (!net.edges.containsKey(e.id) || edgeValid(net, e)) {
+                    continue;
                 }
+                if (reroute(net, e)) {
+                    changed = true;
+                } else {
+                    failed.add(e.id);
+                }
+            }
+            if (!failed.isEmpty() && allowRebuild) {
+                // ребро не перестраивается при новом ДУ: вынимаем ОКС его поддерева и вставляем заново
+                List<Integer> oks = new ArrayList<>();
+                for (int id : failed) {
+                    Net.Edge e = net.edges.get(id);
+                    if (e != null) {
+                        collectOks(net, e.child, oks);
+                    }
+                }
+                for (int k : oks) {
+                    remove(net, k);
+                }
+                sizeAndValidate(net, false);
+                for (int k : oks) {
+                    insert(net, k, List.of());
+                    sizeAndValidate(net, false);
+                }
+                net.notes.add("перестроено поддерево из " + oks.size() + " ОКС после роста ДУ");
+                changed = true;
             }
             if (!changed) {
                 return;
             }
+        }
+    }
+
+    private void collectOks(Net net, int node, List<Integer> out) {
+        Net.Node n = net.nodes.get(node);
+        if (n == null) {
+            return;
+        }
+        if (n.kind == Net.Kind.OKS && !out.contains(n.oks)) {
+            out.add(n.oks);
+        }
+        for (Net.Edge c : net.childEdges(node)) {
+            collectOks(net, c.child, out);
         }
     }
 
@@ -599,6 +642,10 @@ public final class Solver {
         // R-UNC-01: вариант, где не подключено больше ОКС, чем в лучшем, в выдачу не идёт
         int minUnconnected = sorted.stream().mapToInt(c -> c.net.unconnected.size()).min().orElse(0);
         sorted.removeIf(c -> c.net.unconnected.size() > minUnconnected);
+        // варианты с нарушениями правил не выдаются, если есть хотя бы один без нарушений
+        if (sorted.stream().anyMatch(c -> c.eval.invalidSegments == 0)) {
+            sorted.removeIf(c -> c.eval.invalidSegments > 0);
+        }
         List<Candidate> out = new ArrayList<>();
         HeatProperties.Variants v = rules.props().getVariants();
         for (Candidate c : sorted) {

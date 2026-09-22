@@ -29,7 +29,7 @@ services:
       DB_URL: jdbc:postgresql://db:5432/heat
       DB_USER: heat
       DB_PASSWORD: ${DB_PASSWORD:-heat}
-      JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=75}
+      JAVA_OPTS: ${JAVA_OPTS:--Xmx2g}
     ports:
       - "${APP_PORT:-8090}:8080"
     volumes:
