@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Трассировка теплосети</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+<aside id="panel">
+  <header>
+    <h1>Трассировка подключений</h1>
+    <p class="sub">к тепловым сетям · ЛЦТ-2026</p>
+  </header>
+
+  <section>
+    <h2>1. Данные</h2>
+    <label class="file">
+      <input type="file" id="file" accept=".geojson,.json">
+      <span id="fileName">Выбрать GeoJSON…</span>
+    </label>
+    <button id="upload" disabled>Загрузить</button>
+    <select id="datasets"><option value="">- датасеты -</option></select>
+    <div id="datasetInfo" class="info"></div>
+  </section>
+
+  <section>
+    <h2>2. Расчёт</h2>
+    <button id="solve" class="primary" disabled>Построить сеть</button>
+    <select id="solutions"><option value="">- расчёты -</option></select>
+    <div id="solveStatus" class="info"></div>
+  </section>
+
+  <section id="variantsBox" hidden>
+    <h2>3. Варианты <span class="hint">меньше S - лучше</span></h2>
+    <table id="variants">
+      <thead><tr><th>#</th><th>S</th><th>Стоимость, млн ₽</th><th>Длина, м</th><th>Камер</th><th>Врезок</th><th>Правила</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <label class="check"><input type="checkbox" id="showAll"> показать все варианты</label>
+    <a id="download" class="button" href="#">Скачать GeoJSON (формат ТЗ)</a>
+    <div id="variantDetails" class="info"></div>
+  </section>
+
+  <section>
+    <h2>Легенда</h2>
+    <div id="legend"></div>
+  </section>
+</aside>
+<main id="map"></main>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
