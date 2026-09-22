@@ -470,6 +470,51 @@ public final class Solver {
     }
 
     /**
+     * LNS «разрушить и собрать»: вынуть группу соседних ОКС и вставить в случайном порядке.
+     * Выводит из локальных оптимумов, где одиночная перевставка уже ничего не даёт.
+     */
+    Net ruinAndRecreate(Net net, long deadline, Random rnd, List<double[]> forbidden) {
+        Net best = net;
+        double bestScore = evaluator.evaluate(best).rankScore();
+        int n = ctx.scenario.oks.size();
+        if (n < 3) {
+            return best;
+        }
+        int moves = 0;
+        int accepted = 0;
+        long t0 = System.currentTimeMillis();
+        while (System.currentTimeMillis() < deadline) {
+            int seed = rnd.nextInt(n);
+            Coordinate sc = ctx.scenario.oks.get(seed).geom.getCoordinate();
+            List<Integer> ids = new ArrayList<>();
+            for (int k = 0; k < n; k++) {
+                ids.add(k);
+            }
+            ids.sort(Comparator.comparingDouble(k -> ctx.scenario.oks.get(k).geom.getCoordinate().distance(sc)));
+            List<Integer> group = new ArrayList<>(ids.subList(0, Math.min(n, 2 + rnd.nextInt(4))));
+            Net trial = best.copy();
+            for (int k : group) {
+                remove(trial, k);
+            }
+            sizeAndValidate(trial);
+            Collections.shuffle(group, rnd);
+            for (int k : group) {
+                insert(trial, k, forbidden);
+                sizeAndValidate(trial);
+            }
+            double s = evaluator.evaluate(trial).rankScore();
+            moves++;
+            if (s < bestScore - 1e-9) {
+                best = trial;
+                bestScore = s;
+                accepted++;
+            }
+        }
+        log.info("LNS: {} ходов, принято {}, {} мс, S={}", moves, accepted, System.currentTimeMillis() - t0, round(bestScore));
+        return best;
+    }
+
+    /**
      * Полный расчёт режима 2D: пул решений разными стратегиями и отбор вариантов.
      * Бюджет времени делится так: жадное дерево + локальный поиск для каждой стратегии, пока есть время;
      * «звезда» - только на небольших наборах; остаток - на шлифовку лучшего решения.
@@ -490,17 +535,15 @@ public final class Solver {
         }
         for (int i = 0; i < strategies.size(); i++) {
             long now = System.currentTimeMillis();
-            if (i > 0 && now >= deadline - budgetMs / 5 && i >= Math.min(3, cfg.getGreedyRestarts())) {
-                break; // последние 20% бюджета - на другую врезку и шлифовку
-            }
-            if (i >= cfg.getGreedyRestarts() && now >= deadline - budgetMs / 5) {
+            // перезапуски - до половины бюджета (но хотя бы одна стратегия), дальше другая врезка и шлифовка
+            if (i > 0 && now >= started + budgetMs / 2) {
                 break;
             }
             String strategy = strategies.get(i);
             long g0 = System.currentTimeMillis();
             Net net = greedy(order(strategy, rnd), none);
             log.info("{}: жадная вставка {} мс", strategy, System.currentTimeMillis() - g0);
-            long share = Math.max((deadline - System.currentTimeMillis()) / Math.max(2, cfg.getGreedyRestarts() - i), 2000);
+            long share = Math.max((started + budgetMs / 2 - System.currentTimeMillis()) / Math.max(2, cfg.getGreedyRestarts() - i), 1000);
             net = improve(net, System.currentTimeMillis() + share, rnd, none);
             pool.add(finish(net, strategy));
         }
@@ -518,14 +561,15 @@ public final class Solver {
         }
         if (!forbidden.isEmpty()) {
             Net alt = greedy(order("nearest-first", rnd), forbidden);
-            alt = improve(alt, System.currentTimeMillis() + Math.max(2000, (deadline - System.currentTimeMillis()) / 2), rnd, forbidden);
+            alt = improve(alt, Math.max(started + budgetMs * 65 / 100, System.currentTimeMillis() + 1000), rnd, forbidden);
             pool.add(finish(alt, "other-tie-in"));
         }
 
         // шлифовка лучшего решения оставшимся временем
         best = pool.stream().min(Comparator.comparingDouble(c -> c.eval.rankScore())).orElseThrow();
         if (System.currentTimeMillis() < deadline) {
-            Net polished = improve(best.net.copy(), deadline, rnd, none);
+            Net polished = ruinAndRecreate(best.net.copy(), deadline, rnd, none);
+            polished = improve(polished, deadline + 2000, rnd, none);
             Candidate p = finish(polished, best.strategy + "+polish");
             if (p.eval.rankScore() < best.eval.rankScore() - 1e-9) {
                 pool.add(p);
