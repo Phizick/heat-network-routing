@@ -114,8 +114,21 @@ public final class Context {
         }
     }
 
+    /**
+     * Слой препятствий для ДУ. Слои строятся на класс отступа (heat.geometry.clearance-classes):
+     * ДУ класса получает отступы по верхнему ДУ класса - это консервативно и сильно экономит память.
+     */
     public synchronized ObstacleLayer layer(int dn) {
-        return layers.computeIfAbsent(dn, d -> new ObstacleLayer(this, d));
+        return layers.computeIfAbsent(clearanceClass(dn), d -> new ObstacleLayer(this, d));
+    }
+
+    int clearanceClass(int dn) {
+        for (int c : rules.props().getGeometry().getClearanceClasses()) {
+            if (dn <= c) {
+                return c;
+            }
+        }
+        return dn;
     }
 
     /** Основной порт ОКС для ДУ (ближайшая точка границы). null - выйти из здания нельзя. */

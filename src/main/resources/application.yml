@@ -113,7 +113,9 @@ heat:
     simplify-tolerance-m: 0.3
     clearance-margin-m: 0.05
     road-sample-step-m: 10
-    visibility-radius-m: 600
+    visibility-radius-m: 300
+    # классы ДУ для слоёв препятствий (граница не пересекает смену отступа oks на ДУ 500 и 900)
+    clearance-classes: [100, 150, 200, 300, 400, 600, 800, 1000, 1400]
     turn-penalty-m: 1.0
 
   score:

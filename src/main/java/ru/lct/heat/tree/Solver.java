@@ -436,6 +436,9 @@ public final class Solver {
         Net best = net;
         double bestScore = evaluator.evaluate(best).rankScore();
         boolean improved = true;
+        int moves = 0;
+        int accepted = 0;
+        long t0 = System.currentTimeMillis();
         while (improved && System.currentTimeMillis() < deadline) {
             improved = false;
             List<Integer> ids = new ArrayList<>();
@@ -453,58 +456,80 @@ public final class Solver {
                 insert(trial, k, forbidden);
                 sizeAndValidate(trial);
                 double s = evaluator.evaluate(trial).rankScore();
+                moves++;
                 if (s < bestScore - 1e-9) {
                     best = trial;
                     bestScore = s;
                     improved = true;
+                    accepted++;
                 }
             }
         }
+        log.info("локальный поиск: {} ходов, принято {}, {} мс, S={}", moves, accepted, System.currentTimeMillis() - t0, round(bestScore));
         return best;
     }
 
-    /** Полный расчёт режима 2D: пул решений разными стратегиями и отбор вариантов. */
+    /**
+     * Полный расчёт режима 2D: пул решений разными стратегиями и отбор вариантов.
+     * Бюджет времени делится так: жадное дерево + локальный поиск для каждой стратегии, пока есть время;
+     * «звезда» - только на небольших наборах; остаток - на шлифовку лучшего решения.
+     */
     public List<Candidate> solve() {
         long started = System.currentTimeMillis();
         long budgetMs = (long) (cfg.getTimeBudgetS() * 1000);
+        long deadline = started + budgetMs;
         Random rnd = new Random(cfg.getSeed());
         List<Candidate> pool = new ArrayList<>();
         List<double[]> none = List.of();
-
-        Net star = star(none);
-        pool.add(finish(star, "star"));
+        int n = ctx.scenario.oks.size();
 
         List<String> strategies = new ArrayList<>(List.of("nearest-first", "largest-flow-first", "farthest-first"));
-        while (strategies.size() < Math.max(3, cfg.getGreedyRestarts())) {
+        // случайные перезапуски идут, пока есть время (не меньше greedy-restarts, не больше 100)
+        while (strategies.size() < 100) {
             strategies.add("random-" + strategies.size());
         }
-        int runs = strategies.size() + 1;
         for (int i = 0; i < strategies.size(); i++) {
             long now = System.currentTimeMillis();
-            long left = started + budgetMs - now;
-            if (left <= 0 && i >= 1) {
+            if (i > 0 && now >= deadline - budgetMs / 5 && i >= Math.min(3, cfg.getGreedyRestarts())) {
+                break; // последние 20% бюджета - на другую врезку и шлифовку
+            }
+            if (i >= cfg.getGreedyRestarts() && now >= deadline - budgetMs / 5) {
                 break;
             }
-            long share = Math.max(left / Math.max(1, runs - i), 2000);
             String strategy = strategies.get(i);
+            long g0 = System.currentTimeMillis();
             Net net = greedy(order(strategy, rnd), none);
-            net = improve(net, now + share, rnd, none);
+            log.info("{}: жадная вставка {} мс", strategy, System.currentTimeMillis() - g0);
+            long share = Math.max((deadline - System.currentTimeMillis()) / Math.max(2, cfg.getGreedyRestarts() - i), 2000);
+            net = improve(net, System.currentTimeMillis() + share, rnd, none);
             pool.add(finish(net, strategy));
-            log.info("стратегия {}: S = {}", strategy, pool.get(pool.size() - 1).eval.score);
+        }
+        if (n <= 40) {
+            pool.add(finish(star(none), "star"));
         }
 
         // содержательно другой вариант: запрещаем врезки лучшего решения
         Candidate best = pool.stream().min(Comparator.comparingDouble(c -> c.eval.rankScore())).orElseThrow();
         List<double[]> forbidden = new ArrayList<>();
-        for (Net.Node n : best.net.nodes.values()) {
-            if (n.root) {
-                forbidden.add(new double[] {n.c.x, n.c.y, 30.0});
+        for (Net.Node node : best.net.nodes.values()) {
+            if (node.root) {
+                forbidden.add(new double[] {node.c.x, node.c.y, 30.0});
             }
         }
         if (!forbidden.isEmpty()) {
             Net alt = greedy(order("nearest-first", rnd), forbidden);
-            alt = improve(alt, System.currentTimeMillis() + Math.max(2000, budgetMs / 6), rnd, forbidden);
+            alt = improve(alt, System.currentTimeMillis() + Math.max(2000, (deadline - System.currentTimeMillis()) / 2), rnd, forbidden);
             pool.add(finish(alt, "other-tie-in"));
+        }
+
+        // шлифовка лучшего решения оставшимся временем
+        best = pool.stream().min(Comparator.comparingDouble(c -> c.eval.rankScore())).orElseThrow();
+        if (System.currentTimeMillis() < deadline) {
+            Net polished = improve(best.net.copy(), deadline, rnd, none);
+            Candidate p = finish(polished, best.strategy + "+polish");
+            if (p.eval.rankScore() < best.eval.rankScore() - 1e-9) {
+                pool.add(p);
+            }
         }
         return selectVariants(pool);
     }
@@ -512,13 +537,24 @@ public final class Solver {
     private Candidate finish(Net net, String strategy) {
         straighten(net);
         sizeAndValidate(net);
-        return new Candidate(net, evaluator.evaluate(net), strategy);
+        Eval e = evaluator.evaluate(net);
+        log.info("{}: S={} трубы={} камеры={} врезки={} L={} врезок={} неподкл={}", strategy, round(e.score),
+                round(e.pipeCost / 1e6), round(e.chamberCost / 1e6), round(e.existingTieInCost / 1e6), round(e.length),
+                net.nodes.values().stream().filter(n -> n.root).count(), net.unconnected.size());
+        return new Candidate(net, e, strategy);
+    }
+
+    private static double round(double v) {
+        return Math.round(v * 100) / 100.0;
     }
 
     /** До N вариантов по возрастанию S, каждый отличается от уже выбранных (R-VAR-02). */
     List<Candidate> selectVariants(List<Candidate> pool) {
         List<Candidate> sorted = new ArrayList<>(pool);
         sorted.sort(Comparator.comparingDouble(c -> c.eval.rankScore()));
+        // R-UNC-01: вариант, где не подключено больше ОКС, чем в лучшем, в выдачу не идёт
+        int minUnconnected = sorted.stream().mapToInt(c -> c.net.unconnected.size()).min().orElse(0);
+        sorted.removeIf(c -> c.net.unconnected.size() > minUnconnected);
         List<Candidate> out = new ArrayList<>();
         HeatProperties.Variants v = rules.props().getVariants();
         for (Candidate c : sorted) {
