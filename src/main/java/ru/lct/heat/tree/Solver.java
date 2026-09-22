@@ -261,7 +261,10 @@ public final class Solver {
         sizeAndValidate(net, false);
     }
 
+    private static final int MAX_REBUILDS = 3;
+
     private void sizeAndValidate(Net net, boolean allowRebuild) {
+        int rebuilds = 0;
         for (int iter = 0; iter < cfg.getMaxSizingIterations(); iter++) {
             sizer.size(net);
             boolean changed = false;
@@ -276,7 +279,8 @@ public final class Solver {
                     failed.add(e.id);
                 }
             }
-            if (!failed.isEmpty() && allowRebuild) {
+            if (!failed.isEmpty() && allowRebuild && rebuilds < MAX_REBUILDS) {
+                rebuilds++;
                 // ребро не перестраивается при новом ДУ: вынимаем ОКС его поддерева и вставляем заново
                 List<Integer> oks = new ArrayList<>();
                 for (int id : failed) {
@@ -294,7 +298,7 @@ public final class Solver {
                     sizeAndValidate(net, false);
                 }
                 net.notes.add("перестроено поддерево из " + oks.size() + " ОКС после роста ДУ");
-                return; // перестроение делаем один раз за сборку варианта
+                changed = true;
             }
             if (!changed) {
                 return;
