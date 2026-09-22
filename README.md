@@ -70,7 +70,7 @@ docs/rules.md                      правила задачи из ТЗ с ко
 
 ## CI/CD
 
-Локальный GitLab `lct-heat/heat-routing`: `test` (mvn test) → `build` (образ `heat-routing:<sha>`) →
+Локальный GitLab `lct-heat/heat-routing`: `test` (mvn test) → `build` (образ `heat-routing:<sha>` в Docker хоста, без registry) →
 `deploy` (`docker compose -p heat-routing up -d` на хосте раннера).
 
 ## Документация
