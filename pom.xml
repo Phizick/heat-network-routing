@@ -94,7 +94,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <argLine>-Xmx1500m</argLine>
+                    <argLine>-Xmx768m</argLine>
                 </configuration>
             </plugin>
         </plugins>

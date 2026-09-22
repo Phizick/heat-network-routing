@@ -12,12 +12,22 @@ public final class SegInfo {
         public final double to;
         public final double k;
         public final String type;
+        /** Существующая линия сети для пересечения heat_network, иначе -1. */
+        public final int line;
+        /** Точка пересечения линейной коммуникации (м от начала отрезка) или середина перехода. */
+        public final double at;
 
         public Special(double from, double to, double k, String type) {
+            this(from, to, k, type, -1, (from + to) / 2);
+        }
+
+        public Special(double from, double to, double k, String type, int line, double at) {
             this.from = from;
             this.to = to;
             this.k = k;
             this.type = type;
+            this.line = line;
+            this.at = at;
         }
     }
 

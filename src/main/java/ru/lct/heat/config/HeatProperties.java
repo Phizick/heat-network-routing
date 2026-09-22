@@ -30,6 +30,7 @@ public class HeatProperties {
     private Score score = new Score();
     private Solver solver = new Solver();
     private Variants variants = new Variants();
+    private Depth depth = new Depth();
 
     @Data
     public static class Crs {
@@ -77,6 +78,9 @@ public class HeatProperties {
 
     public enum Zone { POLYGON_PLUS, POINT_PM }
 
+    /** Вертикальное правило пересечения в режиме с глубиной (последний столбец таблицы 2). */
+    public enum Vertical { NONE, BELOW, ABOVE_OR_BELOW }
+
     @Data
     public static class Restriction {
         private Rule rule = Rule.FORBID;
@@ -92,6 +96,16 @@ public class HeatProperties {
         private double kSpec = 1.0;
         /** Собственная ширина габарита ограничения, м (газ, кабель). */
         private double ownWidth;
+        /** Режим с глубиной: как проходить пересечение по вертикали. */
+        private Vertical vertical = Vertical.NONE;
+        /** BELOW: верх габарита новой сети не мельче, м (дорога 1,0, трамвай 1,2). */
+        private double minTopDepth;
+        /** Условная глубина верха чужой коммуникации, м (газ 2,8, кабель 2,7, теплосеть 3,0). */
+        private double depthTop;
+        /** Высота габарита чужой коммуникации, м (для теплосети берётся из таблицы 1 по её ДУ). */
+        private double ownHeight;
+        /** Просвет по вертикали, м. */
+        private double clearance;
     }
 
     @Data
@@ -139,6 +153,19 @@ public class HeatProperties {
         private int maxSizingIterations = 10;
         /** Сколько расчётов идёт одновременно (остальные ждут в очереди). */
         private int workers = 2;
+    }
+
+    @Data
+    public static class Depth {
+        private boolean enabled = true;
+        private double normalDepth = 3.0;
+        private double minDepth = 0.7;
+        /** 0 - не ограничена. */
+        private double maxDepth;
+        private double maxSlope = 0.10;
+        /** K_гл = 1 при h ≤ threshold, иначе 1 + perM · (h − threshold). */
+        private double kThreshold = 3.0;
+        private double kPerM = 0.10;
     }
 
     @Data

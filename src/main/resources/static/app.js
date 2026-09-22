@@ -100,6 +100,8 @@ function drawInput(fc) {
 
 let resultFc = null;
 let selected = 'v1';
+let mode = '2d';
+let currentSolution = null;
 
 function drawResult() {
   layers.result.clearLayers();
@@ -231,22 +233,39 @@ async function selectSolution(id) {
     $('solveStatus').innerHTML = `<span class="err">Ошибка расчёта: ${esc(s.error)}</span>`;
     return;
   }
-  const sum = s.summary;
+  currentSolution = s;
+  await showMode(id);
+}
+
+async function showMode(id) {
+  const sum = currentSolution.summary;
+  const hasDepth = !!sum.depthVariants;
+  document.querySelector('input[name=mode][value=depth]').disabled = !hasDepth;
+  if (!hasDepth) mode = '2d';
+  document.querySelector(`input[name=mode][value=${mode}]`).checked = true;
+  const variants = mode === 'depth' ? sum.depthVariants : sum.variants;
   $('solveStatus').innerHTML = `Готово за <b>${fmt(sum.elapsedMs / 1000, 1)} с</b> · ОКС: <b>${sum.oksCount}</b>, расход ${fmt(sum.totalFlowTph, 2)} т/ч`
     + (sum.diagnostics && sum.diagnostics.length ? `<br><span class="warn">${sum.diagnostics.map(esc).join('<br>')}</span>` : '');
-  resultFc = await api('/api/solutions/' + id + '/geojson');
-  $('download').href = '/api/solutions/' + id + '/geojson?download=true';
+  resultFc = await api(`/api/solutions/${id}/geojson?mode=${mode}`);
+  $('download').href = `/api/solutions/${id}/geojson?download=true&mode=${mode}`;
+  $('download').textContent = mode === 'depth' ? 'Скачать GeoJSON (режим с глубиной)' : 'Скачать GeoJSON (формат ТЗ, 2D)';
   const tbody = $('variants').querySelector('tbody');
-  tbody.innerHTML = sum.variants.map((v) => {
+  tbody.innerHTML = variants.map((v) => {
     const errs = v.validation_errors || [];
     return `<tr data-v="${v.variant_id}"><td>${v.rank}</td><td><b>${fmt(v.score, 3)}</b></td>
       <td>${fmt(v.calculated_cost / 1e6, 1)}</td><td>${fmt(v.new_network_length)}</td><td>${v.new_chambers}</td>
       <td>${v.tie_ins}</td><td class="${errs.length ? 'bad' : 'ok'}">${errs.length ? errs.length + ' ✗' : '✓'}</td></tr>`;
   }).join('');
-  tbody.querySelectorAll('tr').forEach((tr) => tr.addEventListener('click', () => selectVariant(tr.dataset.v, sum)));
+  const view = { variants };
+  tbody.querySelectorAll('tr').forEach((tr) => tr.addEventListener('click', () => selectVariant(tr.dataset.v, view)));
   $('variantsBox').hidden = false;
-  selectVariant(sum.variants[0] ? sum.variants[0].variant_id : 'v1', sum);
+  selectVariant(variants[0] ? variants[0].variant_id : 'v1', view);
 }
+
+document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', () => {
+  mode = document.querySelector('input[name=mode]:checked').value;
+  if (currentSolution) showMode(currentSolution.id).catch(showError);
+}));
 
 function selectVariant(vid, sum) {
   selected = vid;

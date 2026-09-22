@@ -31,6 +31,11 @@ public final class GeoJsonExporter {
     }
 
     public Map<String, Object> export(List<Solver.Candidate> variants, Map<Integer, List<String>> validation) {
+        return export(variants, validation, "2d");
+    }
+
+    /** mode: "2d" или "depth" - варианты ранжируются и выгружаются раздельно (R-VAR-04). */
+    public Map<String, Object> export(List<Solver.Candidate> variants, Map<Integer, List<String>> validation, String mode) {
         List<Object> features = new ArrayList<>();
         for (int v = 0; v < variants.size(); v++) {
             Solver.Candidate c = variants.get(v);
@@ -39,7 +44,7 @@ public final class GeoJsonExporter {
         }
         Map<String, Object> fc = new LinkedHashMap<>();
         fc.put("type", "FeatureCollection");
-        fc.put("name", "heat_routing_2d");
+        fc.put("name", "heat_routing_" + mode);
         fc.put("features", features);
         return fc;
     }
@@ -104,12 +109,15 @@ public final class GeoJsonExporter {
                 props.put("diameter", e.dn);
                 props.put("length", round2(p.length));
                 props.put("laying_method", p.special ? "special" : "base");
-                props.put("depth_start", null);
-                props.put("depth_end", null);
+                props.put("depth_start", p.depthStart);
+                props.put("depth_end", p.depthEnd);
                 props.put("cost", round(p.cost));
                 if (p.special) {
                     props.put("special_restriction_types", p.types);
                     props.put("k_spec", p.k);
+                }
+                if (p.depthStart != null) {
+                    props.put("k_depth", Math.round(p.kDepth * 10000) / 10000.0);
                 }
                 out.add(feature(line(p.coords), props));
                 prevNode = endNode;

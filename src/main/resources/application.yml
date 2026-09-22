@@ -93,17 +93,23 @@ heat:
     "[prohibited_site]": {rule: forbid, offset: 1.0}
     "[water]":           {rule: forbid, offset: 1.0}
     "[railway]":         {rule: forbid, offset: 1.0}
-    "[road]":            {rule: special, offset: 1.5, min-angle-deg: 45, zone: polygon_plus, extra-m: 3, k-spec: 1.60}
-    "[tram_tracks]":     {rule: special, offset: 1.5, min-angle-deg: 45, zone: polygon_plus, extra-m: 3, k-spec: 1.75}
-    "[gas_pipeline]":    {rule: special, offset: 2.0, zone: point_pm, extra-m: 2, k-spec: 1.25, own-width: 0.40}
-    "[power_cable]":     {rule: special, offset: 2.0, zone: point_pm, extra-m: 2, k-spec: 1.15, own-width: 0.20}
-    # restriction с типом heat_network - как пересечение существующей сети
-    "[heat_network]":    {rule: special, offset: 1.0, zone: point_pm, extra-m: 2, k-spec: 1.05}
+    "[road]":            {rule: special, offset: 1.5, min-angle-deg: 45, zone: polygon_plus, extra-m: 3, k-spec: 1.60,
+                          vertical: below, min-top-depth: 1.0}
+    "[tram_tracks]":     {rule: special, offset: 1.5, min-angle-deg: 45, zone: polygon_plus, extra-m: 3, k-spec: 1.75,
+                          vertical: below, min-top-depth: 1.2}
+    "[gas_pipeline]":    {rule: special, offset: 2.0, zone: point_pm, extra-m: 2, k-spec: 1.25, own-width: 0.40,
+                          vertical: above_or_below, depth-top: 2.8, own-height: 0.40, clearance: 0.2}
+    "[power_cable]":     {rule: special, offset: 2.0, zone: point_pm, extra-m: 2, k-spec: 1.15, own-width: 0.20,
+                          vertical: above_or_below, depth-top: 2.7, own-height: 0.20, clearance: 0.5}
+    # restriction с типом heat_network - как пересечение существующей сети (габарит - как у ДУ 400)
+    "[heat_network]":    {rule: special, offset: 1.0, zone: point_pm, extra-m: 2, k-spec: 1.05, own-width: 1.37,
+                          vertical: above_or_below, depth-top: 3.0, own-height: 0.56, clearance: 0.5}
 
   # Допущение (docs/architecture.md): неизвестный тип = запрет с отступом 1 м + предупреждение
   unknown-restriction: {rule: forbid, offset: 1.0}
   # Габарит существующей линии берётся из таблицы 1 по её diameter
-  existing-network-crossing: {rule: special, offset: 1.0, zone: point_pm, extra-m: 2, k-spec: 1.05}
+  existing-network-crossing: {rule: special, offset: 1.0, zone: point_pm, extra-m: 2, k-spec: 1.05,
+                              vertical: above_or_below, depth-top: 3.0, clearance: 0.5}
 
   geometry:
     max-turn-angle-deg: 90
@@ -137,3 +143,13 @@ heat:
     max-count: 3
     min-difference: 0.2
     corridor-buffer-m: 5
+
+  # Раздел 8 docs/rules.md: режим с глубиной
+  depth:
+    enabled: true
+    normal-depth: 3.0
+    min-depth: 0.7
+    max-depth: 0
+    max-slope: 0.10
+    k-threshold: 3.0
+    k-per-m: 0.10

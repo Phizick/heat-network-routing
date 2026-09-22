@@ -43,5 +43,25 @@ class DemoSolveTest {
         System.out.printf("ДЕМО: S=%.3f, спецучастков=%d, неподкл=%s%n", best.eval.score, special, best.net.unconnected);
         assertThat(best.net.unconnected).isEmpty();
         assertThat(special).isGreaterThan(0);
+
+        // режим с глубиной: под дорогой верх не мельче 1,0 м, у газа выше/ниже с просветом, уклон ≤ 0,1
+        Solver.DepthResult depth = new Solver(ctx).depthVariants(variants);
+        Eval d = depth.variants.get(0).eval;
+        System.out.printf("ДЕМО глубина: S=%.3f (2D %.3f), проблемы=%s%n", d.score, best.eval.score, depth.problems.get(0));
+        assertThat(depth.problems.get(0)).isEmpty();
+        for (List<Eval.Part> parts : d.parts.values()) {
+            for (Eval.Part p : parts) {
+                assertThat(p.depthStart).isNotNull();
+                assertThat(Math.min(p.depthStart, p.depthEnd)).isGreaterThanOrEqualTo(0.7 - 1e-9);
+                if (p.length > 1e-6) {
+                    assertThat(Math.abs(p.depthEnd - p.depthStart) / p.length).isLessThanOrEqualTo(0.1 + 0.01);
+                }
+                if (p.special && p.types.contains("road")) {
+                    assertThat(Math.min(p.depthStart, p.depthEnd)).isGreaterThanOrEqualTo(1.0 - 1e-9);
+                }
+            }
+        }
+        new ObjectMapper().writeValue(new File("target/demo-solution-depth.geojson"),
+                new GeoJsonExporter(ctx, "EPSG:32637").export(depth.variants, new HashMap<>(), "depth"));
     }
 }

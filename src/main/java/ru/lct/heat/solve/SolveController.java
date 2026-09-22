@@ -66,16 +66,19 @@ public class SolveController {
         return s == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(s);
     }
 
-    @Operation(summary = "Выход в формате ТЗ: GeoJSON FeatureCollection в WGS 84 со всеми вариантами")
+    @Operation(summary = "Выход в формате ТЗ: GeoJSON FeatureCollection в WGS 84 со всеми вариантами. "
+            + "mode=2d (по умолчанию) или depth - режим с глубиной, свои варианты и ранжирование")
     @GetMapping(value = "/api/solutions/{id}/geojson", produces = "application/geo+json")
-    public ResponseEntity<String> geojson(@PathVariable UUID id, @RequestParam(defaultValue = "false") boolean download) {
-        String result = repository.result(id);
+    public ResponseEntity<String> geojson(@PathVariable UUID id, @RequestParam(defaultValue = "false") boolean download,
+                                          @RequestParam(defaultValue = "2d") String mode) {
+        boolean depth = "depth".equalsIgnoreCase(mode);
+        String result = repository.result(id, depth);
         if (result == null) {
             return ResponseEntity.notFound().build();
         }
         ResponseEntity.BodyBuilder b = ResponseEntity.ok().contentType(MediaType.parseMediaType("application/geo+json"));
         if (download) {
-            b.header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"heat-routing-" + id + "-2d.geojson\"");
+            b.header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"heat-routing-" + id + (depth ? "-depth" : "-2d") + ".geojson\"");
         }
         return b.body(result);
     }

@@ -431,7 +431,7 @@ public final class ObstacleLayer {
                     return false;
                 }
                 // допущение 3: зона отступа пересекается насквозь, спеццена только на ±extra
-                out.add(new SegInfo.Special(u - extra, u + extra, s.rule.getKSpec(), s.type));
+                out.add(new SegInfo.Special(u - extra, u + extra, s.rule.getKSpec(), s.type, s.line, u));
             }
         }
         // каждая часть отрезка в зоне отступа должна быть частью перехода, а не проходом вдоль

@@ -31,9 +31,9 @@ public class SolutionRepository {
         jdbc.update("insert into solution(id, dataset_id, status) values (?, ?, 'PROCESSING')", id, datasetId);
     }
 
-    public void markReady(UUID id, Object summary, String result) {
-        jdbc.update("update solution set status = 'READY', summary = ?::jsonb, result = ?, finished_at = now() where id = ?",
-                toJson(summary), result, id);
+    public void markReady(UUID id, Object summary, String result, String resultDepth) {
+        jdbc.update("update solution set status = 'READY', summary = ?::jsonb, result = ?, result_depth = ?, "
+                + "finished_at = now() where id = ?", toJson(summary), result, resultDepth, id);
     }
 
     public void markFailed(UUID id, String error) {
@@ -62,8 +62,9 @@ public class SolutionRepository {
                 + "where dataset_id = ? order by created_at desc", datasetId);
     }
 
-    public String result(UUID id) {
-        List<String> rows = jdbc.queryForList("select result from solution where id = ?", String.class, id);
+    public String result(UUID id, boolean depth) {
+        List<String> rows = jdbc.queryForList("select " + (depth ? "result_depth" : "result") + " from solution where id = ?",
+                String.class, id);
         return rows.isEmpty() ? null : rows.get(0);
     }
 

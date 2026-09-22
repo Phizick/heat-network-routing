@@ -66,6 +66,32 @@ public final class Solver {
         return evaluator;
     }
 
+    /** Варианты режима с глубиной: те же плановые трассы с профилем глубины, своё ранжирование по S. */
+    public static final class DepthResult {
+        public final List<Candidate> variants = new ArrayList<>();
+        public final List<List<String>> problems = new ArrayList<>();
+    }
+
+    public DepthResult depthVariants(List<Candidate> plan) {
+        DepthProfiler profiler = new DepthProfiler(ctx, evaluator);
+        List<Object[]> scored = new ArrayList<>();
+        for (Candidate c : plan) {
+            List<String> problems = new ArrayList<>();
+            Eval depth = profiler.evaluate(c.net, c.eval, problems);
+            scored.add(new Object[] {new Candidate(c.net, depth, c.strategy), problems});
+        }
+        scored.sort(Comparator.comparingDouble(o -> ((Candidate) o[0]).eval.rankScore()
+                + (((List<?>) o[1]).isEmpty() ? 0 : 1000)));
+        DepthResult r = new DepthResult();
+        for (Object[] o : scored) {
+            r.variants.add((Candidate) o[0]);
+            @SuppressWarnings("unchecked")
+            List<String> problems = (List<String>) o[1];
+            r.problems.add(problems);
+        }
+        return r;
+    }
+
     // ---------------------------------------------------------------- вставка и удаление
 
     /** Подключает ОКС k к сети (существующей или новой). false - маршрут не найден. */
@@ -276,7 +302,6 @@ public final class Solver {
                 starts.add(Router.Start.of(port));
             }
             if (starts.isEmpty()) {
-                net.notes.add("ребро " + e.id + ": при ДУ " + dn + " нет выхода из здания, оставлена прежняя трасса");
                 return false;
             }
         } else {
@@ -301,7 +326,6 @@ public final class Solver {
             }
             return true;
         }
-        net.notes.add("ребро " + e.id + ": не удалось перестроить при ДУ " + dn);
         return false;
     }
 

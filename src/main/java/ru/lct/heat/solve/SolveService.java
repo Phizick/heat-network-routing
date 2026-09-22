@@ -84,9 +84,29 @@ public class SolveService {
             for (int v = 0; v < variants.size(); v++) {
                 validation.put(v, validator.validate(variants.get(v).net, variants.get(v).eval));
             }
-            Map<String, Object> fc = new GeoJsonExporter(ctx, props.getCrs().getCalc()).export(variants, validation);
-            String json = mapper.writeValueAsString(fc);
-            solutions.markReady(id, summary(ctx, variants, validation, System.currentTimeMillis() - started), json);
+            GeoJsonExporter exporter = new GeoJsonExporter(ctx, props.getCrs().getCalc());
+            String json = mapper.writeValueAsString(exporter.export(variants, validation, "2d"));
+            Map<String, Object> summary = summary(ctx, variants, validation, System.currentTimeMillis() - started);
+            String depthJson = null;
+            if (props.getDepth().isEnabled()) {
+                // режим с глубиной: отдельный файл и своё ранжирование (R-VAR-04)
+                Solver.DepthResult depth = solver.depthVariants(variants);
+                Map<Integer, List<String>> depthValidation = new HashMap<>();
+                for (int v = 0; v < depth.variants.size(); v++) {
+                    // план тот же, что у 2D-варианта: его проверка + проверки профиля глубины
+                    List<String> errors = new ArrayList<>();
+                    for (int i = 0; i < variants.size(); i++) {
+                        if (variants.get(i).net == depth.variants.get(v).net) {
+                            errors.addAll(validation.get(i));
+                        }
+                    }
+                    errors.addAll(depth.problems.get(v));
+                    depthValidation.put(v, errors);
+                }
+                depthJson = mapper.writeValueAsString(exporter.export(depth.variants, depthValidation, "depth"));
+                summary.put("depthVariants", variantList(depth.variants, depthValidation));
+            }
+            solutions.markReady(id, summary, json, depthJson);
             log.info("расчёт {}: {} вариантов за {} мс", id, variants.size(), System.currentTimeMillis() - started);
         } catch (Exception e) {
             log.error("расчёт {}: ошибка", id, e);
@@ -102,6 +122,11 @@ public class SolveService {
         s.put("totalFlowTph", ctx.scenario.oks.stream().mapToDouble(o -> o.flow).sum());
         s.put("existingNetworkComponents", ctx.network.components);
         s.put("diagnostics", ctx.diagnostics);
+        s.put("variants", variantList(variants, validation));
+        return s;
+    }
+
+    private List<Map<String, Object>> variantList(List<Solver.Candidate> variants, Map<Integer, List<String>> validation) {
         List<Map<String, Object>> list = new ArrayList<>();
         for (int v = 0; v < variants.size(); v++) {
             Solver.Candidate c = variants.get(v);
@@ -125,7 +150,6 @@ public class SolveService {
             m.put("notes", new ArrayList<>(c.net.notes));
             list.add(m);
         }
-        s.put("variants", list);
-        return s;
+        return list;
     }
 }

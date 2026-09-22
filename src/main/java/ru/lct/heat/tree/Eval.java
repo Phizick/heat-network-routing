@@ -18,6 +18,10 @@ public final class Eval {
         public final String types;
         public final double length;
         public final double cost;
+        /** Режим с глубиной: глубина верха габарита в начале и конце, м (null в 2D). */
+        public Double depthStart;
+        public Double depthEnd;
+        public double kDepth = 1.0;
 
         Part(List<Coordinate> coords, boolean special, double k, String types, double length, double cost) {
             this.coords = coords;

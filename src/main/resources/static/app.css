@@ -97,3 +97,6 @@ tbody tr.active { background: var(--accent-soft); }
 
 /* приглушённая подложка: сеть и ограничения читаются лучше */
 .leaflet-tile-pane { filter: grayscale(0.85) brightness(1.08) contrast(0.9); }
+
+.modes { display: flex; gap: 16px; margin-bottom: 8px; color: var(--muted); }
+.modes label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
