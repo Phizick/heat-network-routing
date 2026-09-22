@@ -17,7 +17,7 @@ class SolverTest {
     @BeforeAll
     static void load() throws Exception {
         ctx = TestSupport.context("/lct-dataset.geojson");
-        ctx.rules.props().getSolver().setTimeBudgetS(20);
+        ctx.rules.props().getSolver().setTimeBudgetS(10);
     }
 
     @Test

@@ -17,10 +17,15 @@ async function api(url, opts) {
 // ---------------------------------------------------------------- карта
 
 const map = L.map('map', { preferCanvas: true }).setView([55.698, 37.64], 15);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-}).addTo(map);
+const baseLayers = {
+  'Светлая (Esri)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 16, maxNativeZoom: 16, attribution: 'Tiles &copy; Esri',
+  }),
+  'OpenStreetMap': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  }),
+};
+baseLayers['Светлая (Esri)'].addTo(map);
 
 const RESTRICTION_STYLE = {
   oks: { color: '#868e96', fillColor: '#adb5bd' },
@@ -46,7 +51,7 @@ const layers = {
   oks: L.featureGroup().addTo(map),
   result: L.featureGroup().addTo(map),
 };
-L.control.layers(null, {
+L.control.layers(baseLayers, {
   'Ограничения': layers.restrictions,
   'Существующая сеть': layers.network,
   'Точки ОКС': layers.oks,
@@ -240,9 +245,9 @@ async function selectSolution(id) {
 async function showMode(id) {
   const sum = currentSolution.summary;
   const hasDepth = !!sum.depthVariants;
-  document.querySelector('input[name=mode][value=depth]').disabled = !hasDepth;
+  document.querySelector('input[name="mode"][value="depth"]').disabled = !hasDepth;
   if (!hasDepth) mode = '2d';
-  document.querySelector(`input[name=mode][value=${mode}]`).checked = true;
+  document.querySelector(`input[name="mode"][value="${mode}"]`).checked = true;
   const variants = mode === 'depth' ? sum.depthVariants : sum.variants;
   $('solveStatus').innerHTML = `Готово за <b>${fmt(sum.elapsedMs / 1000, 1)} с</b> · ОКС: <b>${sum.oksCount}</b>, расход ${fmt(sum.totalFlowTph, 2)} т/ч`
     + (sum.diagnostics && sum.diagnostics.length ? `<br><span class="warn">${sum.diagnostics.map(esc).join('<br>')}</span>` : '');
@@ -262,8 +267,8 @@ async function showMode(id) {
   selectVariant(variants[0] ? variants[0].variant_id : 'v1', view);
 }
 
-document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', () => {
-  mode = document.querySelector('input[name=mode]:checked').value;
+document.querySelectorAll('input[name="mode"]').forEach((r) => r.addEventListener('change', () => {
+  mode = document.querySelector('input[name="mode"]:checked').value;
   if (currentSolution) showMode(currentSolution.id).catch(showError);
 }));
 

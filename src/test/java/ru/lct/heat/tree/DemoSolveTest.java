@@ -22,7 +22,7 @@ class DemoSolveTest {
     @Test
     void demoDatasetHasSpecialCrossings() throws Exception {
         HeatProperties props = TestSupport.props();
-        props.getSolver().setTimeBudgetS(15);
+        props.getSolver().setTimeBudgetS(8);
         Context ctx = new Context(TestSupport.scenario("/static/demo-dataset.geojson", props), new Rules(props), 32637);
         List<Solver.Candidate> variants = new Solver(ctx).solve();
         Validator validator = new Validator(ctx);
