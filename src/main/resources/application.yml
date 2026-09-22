@@ -128,6 +128,7 @@ heat:
     greedy-restarts: 8
     seed: 42
     max-sizing-iterations: 10
+    workers: 2
 
   variants:
     max-count: 3

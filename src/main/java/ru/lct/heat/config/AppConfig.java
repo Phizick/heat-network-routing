@@ -24,6 +24,18 @@ public class AppConfig {
         return executor;
     }
 
+    /** Пул расчётов: ограничивает одновременную нагрузку (до 50 пользователей на 16 ГБ). */
+    @Bean
+    public ThreadPoolTaskExecutor solveExecutor(HeatProperties props) {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(props.getSolver().getWorkers());
+        executor.setMaxPoolSize(props.getSolver().getWorkers());
+        executor.setQueueCapacity(200);
+        executor.setThreadNamePrefix("solve-");
+        executor.initialize();
+        return executor;
+    }
+
     /** Каталоги временного диска: multipart-буфер Tomcat и принятые файлы. */
     @Bean
     public Path uploadDir(HeatProperties props) throws IOException {

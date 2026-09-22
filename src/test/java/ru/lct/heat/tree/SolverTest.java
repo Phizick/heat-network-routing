@@ -43,6 +43,12 @@ class SolverTest {
                     c.strategy, e.score, e.calculatedCost, e.length, e.chamberCost, e.existingTieInCount,
                     c.net.unconnected, e.invalidSegments, c.net.notes);
         }
+        Validator validator = new Validator(ctx);
+        for (Solver.Candidate c : variants) {
+            List<String> errors = validator.validate(c.net, c.eval);
+            System.out.println(c.strategy + " проверка: " + errors);
+            assertThat(errors).as(c.strategy).isEmpty();
+        }
         assertThat(variants).isNotEmpty();
         Solver.Candidate best = variants.get(0);
         assertThat(best.eval.invalidSegments).isZero();

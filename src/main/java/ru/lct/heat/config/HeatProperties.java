@@ -130,6 +130,8 @@ public class HeatProperties {
         private int greedyRestarts = 8;
         private long seed = 42;
         private int maxSizingIterations = 10;
+        /** Сколько расчётов идёт одновременно (остальные ждут в очереди). */
+        private int workers = 2;
     }
 
     @Data
