@@ -43,7 +43,7 @@ const DN_COLORS = [
   [80, '#74c0fc'], [125, '#4dabf7'], [150, '#228be6'], [200, '#1971c2'],
   [300, '#5f3dc4'], [500, '#862e9c'], [99999, '#a61e4d'],
 ];
-const dnColor = (dn) => DN_COLORS.find(([max]) => dn <= max)[1];
+const dnColor = (dn) => (DN_COLORS.find(([max]) => (dn || 0) <= max) || DN_COLORS[DN_COLORS.length - 1])[1];
 
 const layers = {
   restrictions: L.featureGroup().addTo(map),
@@ -117,6 +117,8 @@ function drawResult() {
   L.geoJSON(resultFc, {
     filter: visible,
     style: (f) => {
+      // style в Leaflet применяется и к circleMarker: точки оформляются в pointToLayer
+      if (f.geometry.type !== 'LineString') return {};
       const other = f.properties.variant_id !== selected;
       return {
         color: other ? '#adb5bd' : dnColor(f.properties.diameter),
