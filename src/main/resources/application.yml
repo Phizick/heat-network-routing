@@ -48,3 +48,88 @@ heat:
       - gas_pipeline
       - power_cable
       - heat_network
+
+  # Таблица 1 docs/rules.md
+  pipes:
+    - {dn: 50,   q-max: 3.5,     l-max: 181,   cost-m: 74023,  width: 0.400, height: 0.125}
+    - {dn: 65,   q-max: 8.3,     l-max: 245,   cost-m: 78631,  width: 0.430, height: 0.140}
+    - {dn: 80,   q-max: 13.2,    l-max: 327,   cost-m: 83530,  width: 0.470, height: 0.160}
+    - {dn: 100,  q-max: 22.3,    l-max: 419,   cost-m: 89748,  width: 0.510, height: 0.180}
+    - {dn: 125,  q-max: 40.2,    l-max: 554,   cost-m: 97275,  width: 0.600, height: 0.225}
+    - {dn: 150,  q-max: 65.1,    l-max: 696,   cost-m: 105507, width: 0.650, height: 0.250}
+    - {dn: 200,  q-max: 152.3,   l-max: 1042,  cost-m: 120275, width: 0.880, height: 0.315}
+    - {dn: 250,  q-max: 274.9,   l-max: 1379,  cost-m: 135323, width: 1.050, height: 0.400}
+    - {dn: 300,  q-max: 437.4,   l-max: 1718,  cost-m: 150022, width: 1.150, height: 0.450}
+    - {dn: 400,  q-max: 943.1,   l-max: 2477,  cost-m: 190299, width: 1.370, height: 0.560}
+    - {dn: 500,  q-max: 1663.4,  l-max: 3245,  cost-m: 224137, width: 1.670, height: 0.710}
+    - {dn: 600,  q-max: 2627.7,  l-max: 4037,  cost-m: 264790, width: 1.850, height: 0.800}
+    - {dn: 700,  q-max: 3735.1,  l-max: 4775,  cost-m: 324298, width: 2.050, height: 0.900}
+    - {dn: 800,  q-max: 5296.8,  l-max: 5644,  cost-m: 325996, width: 2.250, height: 1.000}
+    - {dn: 900,  q-max: 7165.0,  l-max: 6518,  cost-m: 327693, width: 2.450, height: 1.100}
+    - {dn: 1000, q-max: 9391.8,  l-max: 7419,  cost-m: 418777, width: 2.650, height: 1.200}
+    - {dn: 1200, q-max: 15012.8, l-max: 9288,  cost-m: 428074, width: 3.100, height: 1.425}
+    - {dn: 1400, q-max: 22501.9, l-max: 11276, cost-m: 683417, width: 3.450, height: 1.600}
+
+  chambers:
+    max-connections: 4
+    existing-snap-radius-m: 10
+    existing-tie-in-cost: 5000000
+    new-cost-by-max-dn:
+      - {from: 50,   to: 200,  value: 3000000}
+      - {from: 250,  to: 500,  value: 5000000}
+      - {from: 600,  to: 1000, value: 8000000}
+      - {from: 1200, to: 1400, value: 12000000}
+
+  # Таблица 2 docs/rules.md. Ключи в [] - иначе Spring выбросит "_" из имени.
+  restrictions:
+    "[oks]":
+      rule: forbid
+      offset-by-dn:
+        - {from: 0,   to: 499,   value: 5.0}
+        - {from: 500, to: 800,   value: 7.0}
+        - {from: 900, to: 99999, value: 9.0}
+    "[park]":            {rule: forbid, offset: 1.0}
+    "[social_area]":     {rule: forbid, offset: 1.0}
+    "[prohibited_site]": {rule: forbid, offset: 1.0}
+    "[water]":           {rule: forbid, offset: 1.0}
+    "[railway]":         {rule: forbid, offset: 1.0}
+    "[road]":            {rule: special, offset: 1.5, min-angle-deg: 45, zone: polygon_plus, extra-m: 3, k-spec: 1.60}
+    "[tram_tracks]":     {rule: special, offset: 1.5, min-angle-deg: 45, zone: polygon_plus, extra-m: 3, k-spec: 1.75}
+    "[gas_pipeline]":    {rule: special, offset: 2.0, zone: point_pm, extra-m: 2, k-spec: 1.25, own-width: 0.40}
+    "[power_cable]":     {rule: special, offset: 2.0, zone: point_pm, extra-m: 2, k-spec: 1.15, own-width: 0.20}
+    # restriction с типом heat_network - как пересечение существующей сети
+    "[heat_network]":    {rule: special, offset: 1.0, zone: point_pm, extra-m: 2, k-spec: 1.05}
+
+  # Допущение (docs/architecture.md): неизвестный тип = запрет с отступом 1 м + предупреждение
+  unknown-restriction: {rule: forbid, offset: 1.0}
+  # Габарит существующей линии берётся из таблицы 1 по её diameter
+  existing-network-crossing: {rule: special, offset: 1.0, zone: point_pm, extra-m: 2, k-spec: 1.05}
+
+  geometry:
+    max-turn-angle-deg: 90
+    search-area-buffer-m: 200
+    topology-snap-tolerance-m: 0.5
+    oks-polygon-tolerance-m: 1.0
+    simplify-tolerance-m: 0.3
+    clearance-margin-m: 0.05
+    road-sample-step-m: 10
+    turn-penalty-m: 1.0
+
+  score:
+    w-cost: 0.7
+    cost-norm: 25000000
+    w-len: 0.3
+    len-norm: 100
+    penalty-base: 100000000
+    penalty-per-tph: 500000
+
+  solver:
+    time-budget-s: 60
+    greedy-restarts: 8
+    seed: 42
+    max-sizing-iterations: 10
+
+  variants:
+    max-count: 3
+    min-difference: 0.2
+    corridor-buffer-m: 5
