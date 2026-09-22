@@ -67,7 +67,9 @@ curl -s "http://localhost:8090/api/solutions/$SID/geojson?download=true" -o resu
 
 ### POST /api/datasets/{id}/solve
 
-Запуск расчёта в режиме 2D в фоне. `202`: `{"id": "...", "status": "PROCESSING"}`.
+Запуск расчёта в фоне (2D и, если включён, режим с глубиной). `202`: `{"id": "...", "status": "PROCESSING"}`.
+Необязательный `?budgetSeconds=120` - бюджет времени оптимизатора на этот расчёт (0 или без параметра -
+из конфига `heat.solver.time-budget-s`, максимум 600).
 `409` - датасет ещё не загружен, `404` - датасета нет. Одновременно идут `heat.solver.workers` расчётов,
 остальные ждут в очереди.
 

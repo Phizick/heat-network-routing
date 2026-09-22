@@ -40,11 +40,13 @@ public class SolveController {
         this.mapper = mapper;
     }
 
-    @Operation(summary = "Запустить расчёт 2D по загруженному датасету (в фоне)")
+    @Operation(summary = "Запустить расчёт в фоне. budgetSeconds - бюджет времени оптимизатора "
+            + "(0 или без параметра - из конфига heat.solver.time-budget-s)")
     @PostMapping("/api/datasets/{id}/solve")
-    public ResponseEntity<Map<String, Object>> solve(@PathVariable UUID id) {
+    public ResponseEntity<Map<String, Object>> solve(@PathVariable UUID id,
+                                                     @RequestParam(defaultValue = "0") double budgetSeconds) {
         try {
-            UUID solution = service.start(id);
+            UUID solution = service.start(id, Math.min(budgetSeconds, 600));
             return ResponseEntity.status(HttpStatus.ACCEPTED).body(Map.of("id", solution, "status", "PROCESSING"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.notFound().build();

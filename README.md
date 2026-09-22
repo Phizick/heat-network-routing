@@ -60,11 +60,11 @@ docker run --rm -v "$PWD":/src -v heat-m2:/root/.m2 -w /src maven:3.8.8-eclipse-
 |---|---|---|
 | POST | `/api/datasets` | загрузить GeoJSON (multipart, поле `file`), разбор в фоне |
 | GET | `/api/datasets/{id}` | статус и отчёт диагностики |
-| POST | `/api/datasets/{id}/solve` | запустить расчёт |
+| POST | `/api/datasets/{id}/solve` | запустить расчёт (`?budgetSeconds=120` - бюджет времени) |
 | GET | `/api/solutions/{id}` | статус и сводка по вариантам |
 | GET | `/api/solutions/{id}/geojson` | выход в формате ТЗ (`?mode=depth` - режим с глубиной) |
 
-Подробнее: [docs/api.md](docs/api.md).
+Подробнее: [docs/api.md](docs/api.md). Сценарий показа: [docs/demo.md](docs/demo.md).
 
 ## Структура
 

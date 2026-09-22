@@ -53,7 +53,15 @@ public final class Solver {
     private final HeatProperties.Solver cfg;
     private final double maxTurnCos;
 
+    /** Бюджет времени расчёта, с; 0 - из конфига. */
+    private final double budgetOverride;
+
     public Solver(Context ctx) {
+        this(ctx, 0);
+    }
+
+    public Solver(Context ctx, double budgetSeconds) {
+        this.budgetOverride = budgetSeconds;
         this.ctx = ctx;
         this.rules = ctx.rules;
         this.sizer = new Sizer(ctx);
@@ -614,7 +622,7 @@ public final class Solver {
      */
     public List<Candidate> solve() {
         long started = System.currentTimeMillis();
-        long budgetMs = (long) (cfg.getTimeBudgetS() * 1000);
+        long budgetMs = (long) ((budgetOverride > 0 ? budgetOverride : cfg.getTimeBudgetS()) * 1000);
         long deadline = started + budgetMs;
         Random rnd = new Random(cfg.getSeed());
         List<Candidate> pool = new ArrayList<>();

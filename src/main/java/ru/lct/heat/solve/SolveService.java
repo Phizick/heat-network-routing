@@ -51,7 +51,7 @@ public class SolveService {
         solutions.failInterrupted();
     }
 
-    public UUID start(UUID datasetId) {
+    public UUID start(UUID datasetId, double budgetSeconds) {
         Map<String, Object> dataset = datasets.find(datasetId);
         if (dataset == null) {
             throw new IllegalArgumentException("датасет не найден");
@@ -61,11 +61,11 @@ public class SolveService {
         }
         UUID id = UUID.randomUUID();
         solutions.create(id, datasetId);
-        solveExecutor.execute(() -> run(id, datasetId));
+        solveExecutor.execute(() -> run(id, datasetId, budgetSeconds));
         return id;
     }
 
-    private void run(UUID id, UUID datasetId) {
+    private void run(UUID id, UUID datasetId, double budgetSeconds) {
         long started = System.currentTimeMillis();
         try {
             int srid = new Projection(props.getCrs().getCalc()).calcSrid();
@@ -77,7 +77,7 @@ public class SolveService {
                 throw new IllegalStateException("в датасете нет существующей сети heat_network");
             }
             Context ctx = new Context(scenario, new Rules(props), srid);
-            Solver solver = new Solver(ctx);
+            Solver solver = new Solver(ctx, budgetSeconds);
             List<Solver.Candidate> variants = solver.solve();
             Validator validator = new Validator(ctx);
             Map<Integer, List<String>> validation = new HashMap<>();
@@ -86,7 +86,8 @@ public class SolveService {
             }
             GeoJsonExporter exporter = new GeoJsonExporter(ctx, props.getCrs().getCalc());
             String json = mapper.writeValueAsString(exporter.export(variants, validation, "2d"));
-            Map<String, Object> summary = summary(ctx, variants, validation, System.currentTimeMillis() - started);
+            Map<String, Object> summary = summary(ctx, variants, validation, System.currentTimeMillis() - started,
+                    budgetSeconds > 0 ? budgetSeconds : props.getSolver().getTimeBudgetS());
             String depthJson = null;
             if (props.getDepth().isEnabled()) {
                 // режим с глубиной: отдельный файл и своё ранжирование (R-VAR-04)
@@ -115,13 +116,14 @@ public class SolveService {
     }
 
     private Map<String, Object> summary(Context ctx, List<Solver.Candidate> variants,
-                                        Map<Integer, List<String>> validation, long elapsedMs) {
+                                        Map<Integer, List<String>> validation, long elapsedMs, double budget) {
         Map<String, Object> s = new LinkedHashMap<>();
         s.put("elapsedMs", elapsedMs);
         s.put("oksCount", ctx.scenario.oks.size());
         s.put("totalFlowTph", ctx.scenario.oks.stream().mapToDouble(o -> o.flow).sum());
         s.put("existingNetworkComponents", ctx.network.components);
         s.put("diagnostics", ctx.diagnostics);
+        s.put("timeBudgetS", budget);
         s.put("variants", variantList(variants, validation));
         return s;
     }
