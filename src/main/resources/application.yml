@@ -7,7 +7,7 @@ spring:
   application:
     name: heat-routing
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/heat}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/heat?reWriteBatchedInserts=true}
     username: ${DB_USER:heat}
     password: ${DB_PASSWORD:heat}
   servlet:

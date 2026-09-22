@@ -26,7 +26,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DB_URL: jdbc:postgresql://db:5432/heat
+      DB_URL: jdbc:postgresql://db:5432/heat?reWriteBatchedInserts=true
       DB_USER: heat
       DB_PASSWORD: ${DB_PASSWORD:-heat}
       JAVA_OPTS: ${JAVA_OPTS:--Xmx2g}
