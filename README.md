@@ -10,14 +10,19 @@
 
 | Этап | Статус |
 |---|---|
-| Потоковая загрузка GeoJSON до 3 ГБ, проверка данных, перепроецирование в EPSG:32637, запись в PostGIS | готово |
-| Восстановление топологии существующей сети | план |
-| Маршрут одной ОКС до сети (граф видимости + A*, углы ≤ 90°, отступы) | план |
-| Объединение ОКС в дерево, подбор ДУ, предельная длина | план |
-| Стоимость, `S`, варианты, выгрузка GeoJSON | план |
-| Режим с глубиной | план (опционально) |
+| Потоковая загрузка GeoJSON до 3 ГБ, диагностика данных, EPSG:32637, PostGIS | готово |
+| Топология существующей сети, врезка по правилам R-TIE | готово |
+| Маршрут: граф видимости + A*, углы ≤ 90°, отступы по ДУ, спецпереходы дорог и коммуникаций | готово |
+| Дерево: объединение ОКС, камеры ветвления, лес с несколькими врезками | готово |
+| ДУ по расходу, монотонность, предельная длина, перепроверка отступов | готово |
+| Стоимость, S, до 3 разных вариантов, выгрузка GeoJSON по ТЗ | готово |
+| Независимая проверка правил каждого варианта | готово |
+| Карта для просмотра (загрузка, расчёт, варианты) | готово |
+| Режим с глубиной | нет (дополнительная задача) |
 
-Подробнее: [docs/architecture.md](docs/architecture.md).
+Конкурсный датасет: подключены все 17 ОКС, S ≈ 13,6, нарушений правил 0.
+
+Алгоритм и допущения: [docs/architecture.md](docs/architecture.md).
 
 ## Стек
 
@@ -41,18 +46,17 @@ docker compose -p heat-routing up -d --build
 docker run --rm -v "$PWD":/src -v heat-m2:/root/.m2 -w /src maven:3.8.8-eclipse-temurin-11 mvn -B test
 ```
 
-## API
+## Использование
+
+Карта: http://localhost:8090/ - загрузить GeoJSON, «Построить сеть», выбрать вариант, скачать результат.
 
 | Метод | Путь | Назначение |
 |---|---|---|
-| POST | `/api/datasets` | загрузить GeoJSON (multipart, поле `file`), ответ `202` с `id`, разбор в фоне |
-| GET | `/api/datasets` | список загрузок |
-| GET | `/api/datasets/{id}` | статус (`PROCESSING` / `READY` / `FAILED`) и отчёт диагностики |
-| GET | `/api/datasets/{id}/summary` | состав данных в БД: счётчики по типам, длина сети, охват |
-
-```bash
-curl -F "file=@src/test/resources/lct-dataset.geojson" http://localhost:8090/api/datasets
-```
+| POST | `/api/datasets` | загрузить GeoJSON (multipart, поле `file`), разбор в фоне |
+| GET | `/api/datasets/{id}` | статус и отчёт диагностики |
+| POST | `/api/datasets/{id}/solve` | запустить расчёт |
+| GET | `/api/solutions/{id}` | статус и сводка по вариантам |
+| GET | `/api/solutions/{id}/geojson` | выход в формате ТЗ |
 
 Подробнее: [docs/api.md](docs/api.md).
 
@@ -60,12 +64,16 @@ curl -F "file=@src/test/resources/lct-dataset.geojson" http://localhost:8090/api
 
 ```
 src/main/java/ru/lct/heat/
-  config/    параметры (application.yml, префикс heat), пул фоновой обработки
-  geo/       перепроецирование WGS 84 ↔ EPSG:32637
+  config/    параметры (application.yml, префикс heat): таблицы ДУ и ограничений, стоимости, веса S
   ingest/    потоковое чтение GeoJSON, проверка объектов, отчёт диагностики
-  dataset/   REST API загрузок, хранение в PostGIS
-src/main/resources/db/migration/   схема БД (Flyway)
-docs/rules.md                      правила задачи из ТЗ с кодами R-...
+  dataset/   REST загрузок, хранение в PostGIS
+  model/     правила (Rules) и входной сценарий
+  route/     препятствия по ДУ, граф видимости, A*, цели врезки
+  tree/      сеть-лес, жадная вставка и локальный поиск, ДУ и L_max, стоимость, валидатор
+  solve/     REST расчёта, выгрузка GeoJSON
+src/main/resources/static/        карта (Leaflet)
+src/main/resources/db/migration/  схема БД (Flyway)
+docs/rules.md                     правила задачи из ТЗ с кодами R-...
 ```
 
 ## CI/CD
