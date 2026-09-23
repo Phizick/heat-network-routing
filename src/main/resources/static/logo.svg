@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="Логотип проекта">
+  <rect width="48" height="48" rx="11" fill="#d9480f"/>
+  <path d="M12 33V21a5 5 0 0 1 5-5h9a5 5 0 0 1 5 5v9a3 3 0 0 0 3 3h3" fill="none" stroke="#fff" stroke-width="4"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="12" cy="33" r="3.6" fill="#fff"/>
+  <circle cx="31" cy="21" r="3" fill="#ffd8a8"/>
+</svg>

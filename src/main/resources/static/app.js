@@ -19,8 +19,12 @@ async function api(url, opts) {
 const map = L.map('map', { preferCanvas: true }).setView([55.698, 37.64], 15);
 // по умолчанию Leaflet 1.9 подставляет в подпись флаг: оставляем только текст,
 // указание источника тайлов убирать нельзя по условиям OSM и Esri
-map.attributionControl.setPrefix('<a href="https://leafletjs.com/" target="_blank" rel="noopener">Leaflet</a>');
+// своя подпись вместо стандартной (у Leaflet 1.9 там флаг); подписи тайлов добавляются сами,
+// когда включена чужая подложка - этого требуют лицензии OSM и Esri
+map.attributionControl.setPrefix('Трассировка теплосетей · ЛЦТ-2026');
 const baseLayers = {
+  // по умолчанию подложки нет: на карте только данные проекта, чужих логотипов и подписей нет
+  'Без подложки': L.layerGroup(),
   'Светлая (Esri)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
     maxZoom: 16, maxNativeZoom: 16, attribution: 'Tiles &copy; Esri',
   }),
@@ -28,7 +32,7 @@ const baseLayers = {
     maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   }),
 };
-baseLayers['Светлая (Esri)'].addTo(map);
+baseLayers['Без подложки'].addTo(map);
 
 const RESTRICTION_STYLE = {
   oks: { color: '#868e96', fillColor: '#adb5bd' },

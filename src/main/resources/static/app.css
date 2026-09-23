@@ -33,6 +33,8 @@ body {
 
 #map { flex: 1; }
 
+header { display: flex; align-items: center; gap: 12px; }
+.logo { width: 38px; height: 38px; flex: none; border-radius: 9px; }
 header h1 { font-size: 19px; margin: 0; }
 .sub { margin: 2px 0 0; color: var(--muted); }
 
@@ -100,3 +102,6 @@ tbody tr.active { background: var(--accent-soft); }
 
 .modes { display: flex; gap: 16px; margin-bottom: 8px; color: var(--muted); }
 .modes label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+
+/* подпись карты: компактная, без чужих логотипов в режиме «без подложки» */
+.leaflet-control-attribution { font-size: 10px; opacity: .75; }
