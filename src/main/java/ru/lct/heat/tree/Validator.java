@@ -204,7 +204,14 @@ public final class Validator {
             Geometry poly = ctx.scenario.restrictions.get(own).geom;
             Geometry inside = ctx.gf.createLineString(e.path.toArray(new Coordinate[0])).intersection(poly);
             Object id = ctx.scenario.oks.get(child.oks).id;
-            if (inside.getNumGeometries() > 1) {
+            // касание угла в одной точке - не проход сквозь дом, считаем только куски с длиной
+            int pieces = 0;
+            for (int g = 0; g < inside.getNumGeometries(); g++) {
+                if (inside.getGeometryN(g).getLength() > 0.05) {
+                    pieces++;
+                }
+            }
+            if (pieces > 1) {
                 out.add("R-OKS-02: трасса от ОКС " + id + " заходит в своё здание несколько раз (проход сквозь дом)");
                 continue;
             }

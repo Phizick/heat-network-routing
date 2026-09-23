@@ -217,8 +217,21 @@ public final class Context {
             Coordinate outside = inside
                     ? new Coordinate(b.x + u[0] * 0.05, b.y + u[1] * 0.05)
                     : new Coordinate(p.x + u[0] * 0.05, p.y + u[1] * 0.05);
-            if (poly.intersects(gf.createLineString(new Coordinate[] {outside, e}))) {
-                continue;
+            Geometry beyondWall = poly.intersection(gf.createLineString(new Coordinate[] {outside, e}));
+            if (beyondWall.getLength() > 0.05) {
+                continue; // за стеной труба снова идёт внутри дома
+            }
+            // и до стены ввод должен быть одним куском: иначе прямая от точки успевает
+            // выйти во двор и снова войти в другое крыло того же дома
+            Geometry inlet = poly.intersection(gf.createLineString(new Coordinate[] {p, outside}));
+            int inletPieces = 0;
+            for (int g = 0; g < inlet.getNumGeometries(); g++) {
+                if (inlet.getGeometryN(g).getLength() > 0.05) {
+                    inletPieces++;
+                }
+            }
+            if (inletPieces > 1) {
+                continue; // ввод разрывается: прямая выходит во двор и снова входит в дом
             }
             boolean distinct = true;
             for (Port q : out) {
