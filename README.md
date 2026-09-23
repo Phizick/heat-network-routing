@@ -84,6 +84,21 @@ src/main/resources/db/migration/  схема БД (Flyway)
 docs/rules.md                     правила задачи из ТЗ с кодами R-...
 ```
 
+## Поставка на другую машину
+
+В `deploy/` лежит всё для установки из готовых образов без сборки:
+`Dockerfile` (образ из собранного jar), `docker-compose.yml` (запуск без build).
+
+```bash
+mvn package                                   # или сборка в контейнере maven
+docker buildx build --platform linux/amd64 -f deploy/Dockerfile -t heat-routing:1.0.0 --load .
+docker pull --platform linux/amd64 postgis/postgis:16-3.4
+docker save heat-routing:1.0.0 | gzip -1 > heat-routing-1.0.0-amd64.tar.gz
+docker save postgis/postgis:16-3.4 | gzip -1 > postgis-16-3.4-amd64.tar.gz
+```
+
+На целевой машине: `docker load -i <архив>` для обоих файлов и `docker compose up -d`.
+
 ## CI/CD
 
 Локальный GitLab `lct-heat/heat-routing`: `test` (mvn test) → `build` (образ `heat-routing:<sha>` в Docker хоста, без registry) →

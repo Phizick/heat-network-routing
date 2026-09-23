@@ -1,0 +1,40 @@
+# Развёртывание из готовых образов: сборка не нужна, образы загружаются из tar-архивов.
+# Совместимо с docker-compose 1.29.2 и с docker compose v2.
+version: "3.8"
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: heat
+      POSTGRES_USER: heat
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-heat}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heat -d heat"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  app:
+    image: heat-routing:1.0.0
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/heat?reWriteBatchedInserts=true
+      DB_USER: heat
+      DB_PASSWORD: ${DB_PASSWORD:-heat}
+      JAVA_OPTS: ${JAVA_OPTS:--Xmx2g}
+    ports:
+      - "${APP_PORT:-8090}:8080"
+    volumes:
+      # временный диск для входных файлов до 3 ГБ
+      - uploads:/var/lib/heat
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  uploads:
