@@ -17,6 +17,9 @@ async function api(url, opts) {
 // ---------------------------------------------------------------- карта
 
 const map = L.map('map', { preferCanvas: true }).setView([55.698, 37.64], 15);
+// по умолчанию Leaflet 1.9 подставляет в подпись флаг: оставляем только текст,
+// указание источника тайлов убирать нельзя по условиям OSM и Esri
+map.attributionControl.setPrefix('<a href="https://leafletjs.com/" target="_blank" rel="noopener">Leaflet</a>');
 const baseLayers = {
   'Светлая (Esri)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
     maxZoom: 16, maxNativeZoom: 16, attribution: 'Tiles &copy; Esri',
