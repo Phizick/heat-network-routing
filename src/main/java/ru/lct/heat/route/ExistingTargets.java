@@ -86,7 +86,11 @@ public final class ExistingTargets implements TargetSet {
         if (isForbidden(x)) {
             return;
         }
-        double radius = rules.props().getChambers().getExistingSnapRadiusM();
+        // R-TIE-02: в пределах 10 м врезаемся в существующую камеру, а не строим новую.
+        // Сверх этого - мягкое предпочтение: рядом со свободной камерой новую не ставим,
+        // чтобы не плодить сооружения там, где есть готовое (эксперты смотрят на число камер).
+        double radius = Math.max(rules.props().getChambers().getExistingSnapRadiusM(),
+                rules.props().getChambers().getPreferExistingWithinM());
         Object[] chambers = ctx.network.chamberIndex.query(new Envelope(x.x - radius, x.x + radius, x.y - radius, x.y + radius)).toArray();
         int nearest = -1;
         double nearestD = Double.MAX_VALUE;

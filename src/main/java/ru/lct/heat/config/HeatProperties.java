@@ -64,6 +64,12 @@ public class HeatProperties {
         private int maxConnections = 4;
         private double existingSnapRadiusM = 10;
         private double existingTieInCost = 5_000_000;
+        /**
+         * Мягкое расширение правила R-TIE-02: радиус, в котором новая камера не ставится, если рядом
+         * есть свободная существующая. 0 - выключено, действует только правило ТЗ (10 м).
+         * На конкурсном наборе включение (25 м) удлиняет трассу примерно на 240 м и ухудшает S с 13,7 до 14,9.
+         */
+        private double preferExistingWithinM = 0;
         private List<DnRange> newCostByMaxDn = new ArrayList<>();
     }
 

@@ -74,6 +74,9 @@ heat:
     max-connections: 4
     existing-snap-radius-m: 10
     existing-tie-in-cost: 5000000
+    # радиус, в котором новая камера не ставится при наличии свободной существующей;
+    # 0 - выключено, действует только правило ТЗ (10 м выше)
+    prefer-existing-within-m: 0
     new-cost-by-max-dn:
       - {from: 50,   to: 200,  value: 3000000}
       - {from: 250,  to: 500,  value: 5000000}
