@@ -43,6 +43,7 @@ public final class Validator {
         angles(net, out);
         crossings(net, out);
         clearances(net, eval, out);
+        insideOwnBuilding(net, out);
         sizing(net, out);
         return out;
     }
@@ -181,6 +182,34 @@ public final class Validator {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Внутри своего здания допустим только ввод: один непрерывный кусок от точки ОКС до стены
+     * (R-OKS-02 и допущение 4 - выход может быть не через ближайшую точку границы).
+     * Повторный заход в свой полигон - проход сквозь дом, это нарушение.
+     */
+    private void insideOwnBuilding(Net net, List<String> out) {
+        for (Net.Edge e : net.edges.values()) {
+            Net.Node child = net.nodes.get(e.child);
+            if (child == null || child.kind != Net.Kind.OKS || !e.fromOks) {
+                continue;
+            }
+            int own = ctx.ownPolygon[child.oks];
+            if (own < 0) {
+                continue;
+            }
+            Geometry poly = ctx.scenario.restrictions.get(own).geom;
+            Geometry inside = ctx.gf.createLineString(e.path.toArray(new Coordinate[0])).intersection(poly);
+            Object id = ctx.scenario.oks.get(child.oks).id;
+            if (inside.getNumGeometries() > 1) {
+                out.add("R-OKS-02: трасса от ОКС " + id + " заходит в своё здание несколько раз (проход сквозь дом)");
+                continue;
+            }
+            if (!inside.isEmpty() && inside.distance(ctx.gf.createPoint(e.path.get(0))) > 0.05) {
+                out.add("R-OKS-02: трасса от ОКС " + id + " пересекает своё здание вне ввода");
             }
         }
     }

@@ -212,6 +212,14 @@ public final class Context {
             if (e == null || layer.check(p, e, own, null) == null) {
                 continue;
             }
+            // R-OKS-02 снимает отступ до своего здания, но сквозь сам дом труба идти не может:
+            // за стеной отрезок не должен снова войти в свой полигон (П- и Г-образные дома)
+            Coordinate outside = inside
+                    ? new Coordinate(b.x + u[0] * 0.05, b.y + u[1] * 0.05)
+                    : new Coordinate(p.x + u[0] * 0.05, p.y + u[1] * 0.05);
+            if (poly.intersects(gf.createLineString(new Coordinate[] {outside, e}))) {
+                continue;
+            }
             boolean distinct = true;
             for (Port q : out) {
                 if (q.e.distance(e) < PORT_SEPARATION) {
