@@ -52,6 +52,16 @@ public final class Evaluator {
     public Eval evaluate(Net net) {
         Eval ev = new Eval();
         for (Net.Edge e : net.edges.values()) {
+            if (e.parts != null && e.parts.valid(e.path, e.dn)) {
+                for (Eval.Part p : e.parts.parts) {
+                    ev.pipeCost += p.cost;
+                    ev.length += p.length;
+                }
+                ev.invalidSegments += e.parts.invalidSegments;
+                ev.parts.put(e.id, e.parts.parts);
+                continue;
+            }
+            int invalidBefore = ev.invalidSegments;
             List<Eval.Part> parts = new ArrayList<>();
             List<Coordinate> current = new ArrayList<>();
             current.add(e.path.get(0));
@@ -93,6 +103,7 @@ public final class Evaluator {
                 ev.length += p.length;
             }
             ev.parts.put(e.id, parts);
+            e.parts = new EdgeParts(e.path, e.dn, parts, ev.invalidSegments - invalidBefore);
         }
 
         for (Net.Node n : net.nodes.values()) {

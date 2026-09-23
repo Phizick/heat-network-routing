@@ -42,6 +42,8 @@ public final class ObstacleLayer {
         Geometry zone;
         PreparedGeometry prep;
         Geometry core;
+        /** Подготовленная геометрия объекта: быстрый отсев отрезков, которые его не пересекают. */
+        PreparedGeometry corePrep;
         Restriction rule;
         String type;
         int line = -1;
@@ -139,6 +141,7 @@ public final class ObstacleLayer {
         }
         for (Soft s : softs) {
             s.prep = PreparedGeometryFactory.prepare(s.zone);
+            s.corePrep = PreparedGeometryFactory.prepare(s.core);
             softIndex.insert(s.zone.getEnvelopeInternal(), s);
         }
         softIndex.build();
@@ -397,11 +400,48 @@ public final class ObstacleLayer {
      * входит в зону и заканчивается в цели b, и не длиннее двух полуширин зоны (угол подхода ≳ 30°).
      */
     private boolean approachOk(Soft s, Coordinate a, Coordinate b, LineString seg) {
+        // Начало подхода не может быть внутри коридора: иначе трасса идёт вдоль линии.
+        if (s.prep.intersects(gf.createPoint(a))) {
+            return false;
+        }
+        Coordinate[] cs = s.core.getCoordinates();
+        if (cs.length > 200) {
+            return approachByOverlay(s, b, seg); // очень длинная линия: считаем честно
+        }
+        LineSegment ab = new LineSegment(a, b);
+        int crossings = 0;
+        LineSegment nearest = null;
+        double nearestD = Double.MAX_VALUE;
+        for (int i = 0; i + 1 < cs.length; i++) {
+            LineSegment core = new LineSegment(cs[i], cs[i + 1]);
+            if (ab.intersection(core) != null) {
+                crossings++;
+            }
+            double d = core.distance(b);
+            if (d < nearestD) {
+                nearestD = d;
+                nearest = core;
+            }
+        }
+        if (crossings > 1 || nearest == null) {
+            return false; // пересекает линию несколько раз: это не подход к врезке
+        }
+        // длина куска внутри коридора = полуширина / sin(угла подхода)
+        double angle = Math.abs(Math.toDegrees(Math.atan2(
+                (b.x - a.x) * (nearest.p1.y - nearest.p0.y) - (b.y - a.y) * (nearest.p1.x - nearest.p0.x),
+                (b.x - a.x) * (nearest.p1.x - nearest.p0.x) + (b.y - a.y) * (nearest.p1.y - nearest.p0.y))));
+        double acute = Math.min(angle, 180 - angle);
+        double sin = Math.sin(Math.toRadians(acute));
+        double inside = sin < 1e-6 ? Double.MAX_VALUE : s.halfWidth / sin;
+        return inside <= approachLimit(s.halfWidth);
+    }
+
+    /** Точный вариант через пересечение геометрий: для очень длинных линий. */
+    private boolean approachByOverlay(Soft s, Coordinate b, LineString seg) {
         Geometry inZone = seg.intersection(s.zone);
         for (int i = 0; i < inZone.getNumGeometries(); i++) {
             Geometry piece = inZone.getGeometryN(i);
-            boolean endsAtB = piece.distance(gf.createPoint(b)) < 1e-6;
-            if (!endsAtB || piece.getLength() > 2 * s.halfWidth + 0.5) {
+            if (piece.distance(gf.createPoint(b)) > 1e-6 || piece.getLength() > approachLimit(s.halfWidth)) {
                 return false;
             }
         }
@@ -419,26 +459,24 @@ public final class ObstacleLayer {
             // внутри зоны нельзя ни начинать, ни заканчивать, ни поворачивать
             return false;
         }
+        // быстрый отсев: отрезок задевает только зону отступа, сам объект не пересекает
+        if (!s.corePrep.intersects(seg)) {
+            return false;
+        }
         double extra = s.rule.getExtraM();
         double minAngle = s.rule.getMinAngleDeg();
         List<double[]> intervals = new ArrayList<>();
         // куски отрезка внутри зоны отступа: обычной прокладки в них быть не может
-        Geometry inZone = seg.intersection(s.zone);
-        for (int i = 0; i < inZone.getNumGeometries(); i++) {
-            if (!inZone.getGeometryN(i).intersects(s.core)) {
-                return false; // проход вдоль ограничения в его зоне отступа
-            }
-        }
-        List<double[]> zonePieces = pieces(inZone, a);
+        List<double[]> zonePieces = insideIntervals(s.zone, s.prep, a, b, len);
         if (s.kind == SoftKind.POLYGON) {
-            Geometry inside = seg.intersection(s.core);
-            if (inside.isEmpty()) {
+            List<double[]> insideCore = insideIntervals(s.core, s.corePrep, a, b, len);
+            if (insideCore.isEmpty()) {
                 return false; // задевает только зону отступа, не пересекая объект
             }
             if (minAngle > 0 && !anglesOk(s.core, a, b, minAngle)) {
                 return false;
             }
-            for (double[] core : pieces(inside, a)) {
+            for (double[] core : insideCore) {
                 double u0 = core[0];
                 double u1 = core[1];
                 double from = u0 - extra;
@@ -457,26 +495,37 @@ public final class ObstacleLayer {
                 intervals.add(new double[] {from, to});
             }
         } else {
-            Geometry x = seg.intersection(s.core);
-            if (x.isEmpty()) {
+            List<Double> crossings = new ArrayList<>();
+            LineSegment ab = new LineSegment(a, b);
+            Coordinate[] cs = s.core.getCoordinates();
+            for (int i = 0; i + 1 < cs.length; i++) {
+                Coordinate x = ab.intersection(new LineSegment(cs[i], cs[i + 1]));
+                if (x != null) {
+                    crossings.add(a.distance(x));
+                }
+            }
+            if (crossings.isEmpty()) {
                 return false; // идёт вдоль линии ближе отступа, не пересекая её
             }
             if (minAngle > 0 && !anglesOk(s.core, a, b, minAngle)) {
                 return false;
             }
-            for (Coordinate c : x.getCoordinates()) {
-                double u = a.distance(c);
+            for (double u : crossings) {
                 if (u - extra < -1e-6 || u + extra > len + 1e-6) {
                     return false;
                 }
                 // допущение 3: зона отступа пересекается насквозь, спеццена только на ±extra
                 out.add(new SegInfo.Special(u - extra, u + extra, s.rule.getKSpec(), s.type, s.line, u));
+                intervals.add(new double[] {u - extra, u + extra});
             }
         }
         // каждая часть отрезка в зоне отступа должна быть частью перехода, а не проходом вдоль
         if (s.kind == SoftKind.POLYGON) {
             // R-RST-02/05: обычной прокладки в зоне отступа дороги быть не может - только спецучасток
             for (double[] z : zonePieces) {
+                if (z[1] - z[0] < 1e-6) {
+                    continue;
+                }
                 boolean covered = false;
                 for (double[] iv : intervals) {
                     if (iv[0] <= z[0] + 1e-6 && iv[1] >= z[1] - 1e-6) {
@@ -490,6 +539,47 @@ public final class ObstacleLayer {
             }
         }
         return true;
+    }
+
+    /**
+     * Интервалы [от, до] (метры от a), на которых отрезок лежит внутри геометрии.
+     * Считается арифметикой по границам плюс проверка середин: дешевле, чем пересечение геометрий.
+     */
+    private List<double[]> insideIntervals(Geometry geom, PreparedGeometry prep, Coordinate a, Coordinate b, double len) {
+        List<Double> cuts = new ArrayList<>();
+        cuts.add(0.0);
+        cuts.add(len);
+        LineSegment ab = new LineSegment(a, b);
+        Geometry boundary = geom instanceof Polygonal ? geom.getBoundary() : geom;
+        for (int g = 0; g < boundary.getNumGeometries(); g++) {
+            Coordinate[] cs = boundary.getGeometryN(g).getCoordinates();
+            for (int i = 0; i + 1 < cs.length; i++) {
+                Coordinate x = ab.intersection(new LineSegment(cs[i], cs[i + 1]));
+                if (x != null) {
+                    cuts.add(Math.max(0, Math.min(len, a.distance(x))));
+                }
+            }
+        }
+        cuts.sort(Double::compare);
+        List<double[]> out = new ArrayList<>();
+        double[] dir = unit(b.x - a.x, b.y - a.y);
+        for (int i = 0; i + 1 < cuts.size(); i++) {
+            double t0 = cuts.get(i);
+            double t1 = cuts.get(i + 1);
+            if (t1 - t0 < 1e-7) {
+                continue;
+            }
+            double mid = (t0 + t1) / 2;
+            if (prep.intersects(gf.createPoint(new Coordinate(a.x + dir[0] * mid, a.y + dir[1] * mid)))) {
+                double[] last = out.isEmpty() ? null : out.get(out.size() - 1);
+                if (last != null && t0 - last[1] < 1e-7) {
+                    last[1] = t1;
+                } else {
+                    out.add(new double[] {t0, t1});
+                }
+            }
+        }
+        return out;
     }
 
     /** Куски пересечения отрезка с геометрией как интервалы [от, до] метров от точки a. */

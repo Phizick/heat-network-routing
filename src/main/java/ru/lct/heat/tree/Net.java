@@ -53,6 +53,14 @@ public final class Net {
         public double flow;
         /** Первый отрезок - финальный отрезок ОКС (R-OKS-02), его не делим и не спрямляем. */
         public boolean fromOks;
+        /** Кэш: для какой трассы и какого ДУ ребро уже признано допустимым. */
+        List<Coordinate> checkedPath;
+        int checkedDn;
+        /** Кэш разбиения на участки (тяжёлые геометрические операции). */
+        EdgeParts parts;
+        /** Кэш неудачной перетрассировки: для этой трассы и этого ДУ пути нет, второй раз не ищем. */
+        List<Coordinate> failedPath;
+        int failedDn;
 
         Edge(int id, int child, int parent, List<Coordinate> path) {
             this.id = id;
@@ -62,10 +70,17 @@ public final class Net {
         }
 
         Edge copy() {
-            Edge e = new Edge(id, child, parent, new ArrayList<>(path));
+            // путь не изменяется на месте, только заменяется целиком, поэтому список можно разделять:
+            // так кэши проверок переживают копирование сети в локальном поиске
+            Edge e = new Edge(id, child, parent, path);
             e.dn = dn;
             e.flow = flow;
             e.fromOks = fromOks;
+            e.checkedPath = checkedPath;
+            e.checkedDn = checkedDn;
+            e.parts = parts;
+            e.failedPath = failedPath;
+            e.failedDn = failedDn;
             return e;
         }
 

@@ -32,6 +32,8 @@ public final class Solver {
 
     private static final Logger log = LoggerFactory.getLogger(Solver.class);
     private static final int MAX_EXPANSIONS = 200_000;
+    /** Перетрассировка ищет между известными узлами: если пути нет, незачем перебирать весь граф. */
+    private static final int REROUTE_EXPANSIONS = 40_000;
 
     /** Готовый вариант. */
     public static final class Candidate {
@@ -320,16 +322,24 @@ public final class Solver {
     }
 
     boolean edgeValid(Net net, Net.Edge e) {
+        if (e.checkedPath == e.path && e.checkedDn == e.dn) {
+            return true; // трасса и ДУ не менялись с прошлой проверки
+        }
         for (int i = 0; i + 1 < e.path.size(); i++) {
             if (evaluator.check(net, e, i) == null) {
                 return false;
             }
         }
+        e.checkedPath = e.path;
+        e.checkedDn = e.dn;
         return true;
     }
 
     /** Перестраивает ребро между его узлами с отступами текущего ДУ. */
     boolean reroute(Net net, Net.Edge e) {
+        if (e.failedPath == e.path && e.failedDn == e.dn) {
+            return false; // для этой трассы и ДУ уже искали, пути нет
+        }
         Net.Node child = net.nodes.get(e.child);
         Net.Node parent = net.nodes.get(e.parent);
         int dn = e.dn > 0 ? e.dn : rules.pipes().get(0).getDn();
@@ -353,7 +363,7 @@ public final class Solver {
                 : pointTarget(parent.c, exempt);
         Blockers blockers = new Blockers(net.segments(e.id));
         for (Router.Start start : starts) {
-            Router.Result r = new Router(ctx.layer(dn), MAX_EXPANSIONS).route(start, target, blockers);
+            Router.Result r = new Router(ctx.layer(dn), REROUTE_EXPANSIONS).route(start, target, blockers);
             if (r == null) {
                 continue;
             }
@@ -363,6 +373,8 @@ public final class Solver {
             }
             return true;
         }
+        e.failedPath = e.path;
+        e.failedDn = e.dn;
         return false;
     }
 
@@ -500,8 +512,11 @@ public final class Solver {
         Net net = new Net();
         for (int k : order) {
             insert(net, k, forbidden);
-            sizeAndValidate(net);
+            // во время вставки только пересчёт расхода и ДУ: перепроверять геометрию после каждой ОКС
+            // бессмысленно, ДУ ещё вырастет от следующих подключений
+            sizer.size(net);
         }
+        sizeAndValidate(net);
         return net;
     }
 
@@ -645,9 +660,7 @@ public final class Solver {
                 break;
             }
             String strategy = strategies.get(i);
-            long g0 = System.currentTimeMillis();
             Net net = greedy(order(strategy, rnd), none);
-            log.info("{}: жадная вставка {} мс", strategy, System.currentTimeMillis() - g0);
             long share = Math.max((started + budgetMs / 2 - System.currentTimeMillis()) / Math.max(2, cfg.getGreedyRestarts() - i), 1000);
             net = improve(net, System.currentTimeMillis() + share, rnd, none);
             pool.add(finish(net, strategy));
