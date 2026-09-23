@@ -5,7 +5,7 @@ RUN mvn -q -B dependency:go-offline
 COPY src src
 RUN mvn -q -B -DskipTests package
 
-FROM eclipse-temurin:11-jre
+FROM eclipse-temurin:11-jre-jammy
 RUN useradd --system --uid 1001 app \
     && mkdir -p /var/lib/heat \
     && chown app /var/lib/heat
