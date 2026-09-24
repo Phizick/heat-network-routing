@@ -178,7 +178,7 @@ final class TreeTargets implements TargetSet {
         double t = s.seg.projectionFactor(from) * len;
         t = Math.max(END_CLEARANCE, Math.min(len - END_CLEARANCE, t));
         Coordinate x = s.seg.pointAlong(t / len);
-        if (layer.isBlocked(x) || ctx.layer(ctx.maxDn).isBlocked(x)) {
+        if (layer.isBlocked(x) || ctx.layer(ctx.maxDn, layer.mode).isBlocked(x)) {
             // камера не может стоять в спецпереходе или зоне отступа, в том числе после роста ДУ
             return;
         }

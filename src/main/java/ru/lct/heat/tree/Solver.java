@@ -52,6 +52,7 @@ public final class Solver {
     }
 
     private final Context ctx;
+    private final HeatProperties.Mode mode;
     private final Rules rules;
     private final Sizer sizer;
     private final Evaluator evaluator;
@@ -62,15 +63,20 @@ public final class Solver {
     private final double budgetOverride;
 
     public Solver(Context ctx) {
-        this(ctx, 0);
+        this(ctx, 0, HeatProperties.Mode.ECONOMY);
     }
 
     public Solver(Context ctx, double budgetSeconds) {
+        this(ctx, budgetSeconds, HeatProperties.Mode.ECONOMY);
+    }
+
+    public Solver(Context ctx, double budgetSeconds, HeatProperties.Mode mode) {
         this.budgetOverride = budgetSeconds;
+        this.mode = mode;
         this.ctx = ctx;
         this.rules = ctx.rules;
         this.sizer = new Sizer(ctx);
-        this.evaluator = new Evaluator(ctx);
+        this.evaluator = new Evaluator(ctx, mode);
         this.cfg = rules.props().getSolver();
         this.maxTurnCos = Math.cos(Math.toRadians(rules.props().getGeometry().getMaxTurnAngleDeg())) - 1e-9;
     }
@@ -115,12 +121,12 @@ public final class Solver {
             net.unconnected.put(k, "расход " + oks.flow + " т/ч больше пропускной способности максимального ДУ");
             return false;
         }
-        List<Context.Port> ports = ctx.ports(k, dn);
+        List<Context.Port> ports = ctx.ports(k, dn, mode);
         if (ports.isEmpty()) {
             net.unconnected.put(k, "нет допустимого выхода из здания: точка окружена запретными зонами");
             return false;
         }
-        ObstacleLayer layer = ctx.layer(dn);
+        ObstacleLayer layer = ctx.layer(dn, mode);
         TargetSet targets = ExistingTargets.union(
                 new ExistingTargets(ctx, dn, usedExistingChambers(net), crossingForbidden(net, forbidden), roots(net, null)),
                 new TreeTargets(net, ctx, layer, oks.flow, dn));
@@ -371,7 +377,7 @@ public final class Solver {
         int dn = e.dn > 0 ? e.dn : rules.pipes().get(0).getDn();
         List<Router.Start> starts = new ArrayList<>();
         if (child.kind == Net.Kind.OKS) {
-            for (Context.Port port : ctx.ports(child.oks, dn)) {
+            for (Context.Port port : ctx.ports(child.oks, dn, mode)) {
                 starts.add(Router.Start.of(port));
             }
             if (starts.isEmpty()) {
@@ -389,7 +395,7 @@ public final class Solver {
                 : pointTarget(parent.c, exempt);
         Blockers blockers = new Blockers(net.segments(e.id));
         for (Router.Start start : starts) {
-            Router.Result r = new Router(ctx.layer(dn), REROUTE_EXPANSIONS).route(start, target, blockers);
+            Router.Result r = new Router(ctx.layer(dn, mode), REROUTE_EXPANSIONS).route(start, target, blockers);
             if (r == null) {
                 continue;
             }
@@ -457,6 +463,21 @@ public final class Solver {
         return l < 1e-12 ? 1 : (x1 * x2 + y1 * y2) / l;
     }
 
+    /**
+     * Спрямление не должно ломать сетку монтажного режима: отрезок после удаления вершины
+     * обязан остаться по сетке. Исключение - перемычки у ввода в здание и у точки врезки.
+     */
+    private boolean straightenAllowed(Net.Edge e, List<Coordinate> trial, int i) {
+        if (mode != HeatProperties.Mode.INSTALLATION) {
+            return true;
+        }
+        ObstacleLayer layer = ctx.layer(e.dn, mode);
+        Coordinate a = trial.get(i - 1);
+        Coordinate b = trial.get(i);
+        // либо отрезок остаётся по сетке, либо это короткая перемычка у ввода или у врезки
+        return layer.gridAligned(a, b) || a.distance(b) <= layer.gridStep() * 1.5;
+    }
+
     /** Спрямление (R-GEO-03): убираем вершины, без которых трасса остаётся допустимой. */
     void straighten(Net net) {
         for (Net.Edge e : net.edges.values()) {
@@ -467,7 +488,7 @@ public final class Solver {
                 for (int i = first; i + 1 < e.path.size(); i++) {
                     List<Coordinate> trial = new ArrayList<>(e.path);
                     trial.remove(i);
-                    if (!anglesOk(trial)) {
+                    if (!anglesOk(trial) || !straightenAllowed(e, trial, i)) {
                         continue;
                     }
                     List<Coordinate> saved = e.path;
@@ -487,6 +508,10 @@ public final class Solver {
                 if (cosTurn(e.path.get(i - 1), e.path.get(i), e.path.get(i + 1)) > Math.cos(Math.toRadians(1))) {
                     List<Coordinate> trial = new ArrayList<>(e.path);
                     trial.remove(i);
+                    if (!straightenAllowed(e, trial, i)) {
+                        i++;
+                        continue;
+                    }
                     List<Coordinate> saved = e.path;
                     e.path = trial;
                     if (anglesOk(trial) && evaluator.check(net, e, i - 1) != null
@@ -552,7 +577,7 @@ public final class Solver {
         for (int k = 0; k < ctx.scenario.oks.size(); k++) {
             Scenario.Oks oks = ctx.scenario.oks.get(k);
             int dn = rules.minDnForFlow(oks.flow);
-            List<Context.Port> ports = dn < 0 ? List.of() : ctx.ports(k, dn);
+            List<Context.Port> ports = dn < 0 ? List.of() : ctx.ports(k, dn, mode);
             if (ports.isEmpty()) {
                 net.unconnected.put(k, dn < 0 ? "расход больше пропускной способности максимального ДУ"
                         : "нет допустимого выхода из здания: точка окружена запретными зонами");
@@ -563,7 +588,7 @@ public final class Solver {
             Blockers blockers = new Blockers(net.segments(null));
             boolean done = false;
             for (Context.Port port : ports) {
-                Router.Result r = new Router(ctx.layer(dn), MAX_EXPANSIONS).route(Router.Start.of(port), targets, blockers);
+                Router.Result r = new Router(ctx.layer(dn, mode), MAX_EXPANSIONS).route(Router.Start.of(port), targets, blockers);
                 if (r != null) {
                     attach(net, k, port, r);
                     done = true;

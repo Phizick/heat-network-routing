@@ -137,6 +137,12 @@ public final class Router {
                 if (from != null && !turnOk(from, v, goal.point)) {
                     continue;
                 }
+                // монтажный режим: сойти с сетки можно только короткой перемычкой у самой цели
+                if (layer.mode == ru.lct.heat.config.HeatProperties.Mode.INSTALLATION
+                        && !layer.gridAligned(v, goal.point)
+                        && v.distance(goal.point) > layer.gridStep() * 1.5) {
+                    continue;
+                }
                 SegInfo info = layer.check(v, goal.point, -1, goal.exemptLines);
                 if (info == null || blockers.blocks(v, goal.point, atStart, true)) {
                     continue;
@@ -154,7 +160,8 @@ public final class Router {
                 if (blockers.blocks(v, w, atStart, false)) {
                     continue;
                 }
-                double g = s.g + e.cost + (from != null && turned(from, v, w) ? turnPenalty : 0);
+                double g = s.g + e.cost * parallelFactor(v, w, blockers)
+                        + (from != null && turned(from, v, w) ? turnPenalty : 0);
                 long k2 = (long) s.node * (n + 2) + e.to;
                 Double old = best.get(k2);
                 if (old != null && old <= g) {
@@ -165,6 +172,16 @@ public final class Router {
             }
         }
         return null;
+    }
+
+    /** Монтажный режим: идти вплотную вдоль уже построенной трубы дорого - лучше врезаться. */
+    private double parallelFactor(Coordinate a, Coordinate b, Blockers blockers) {
+        if (layer.mode != ru.lct.heat.config.HeatProperties.Mode.INSTALLATION) {
+            return 1;
+        }
+        var cfg = layer.rules.props().getInstallation();
+        return blockers.parallelToExisting(a, b, cfg.getParallelDistanceM(), cfg.getParallelAngleDeg())
+                ? cfg.getParallelPenalty() : 1;
     }
 
     private Coordinate coord(int node, Start start, int n) {

@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.locationtech.jts.geom.Coordinate;
 
+import ru.lct.heat.config.HeatProperties;
 import ru.lct.heat.model.Rules;
 import ru.lct.heat.route.Context;
 import ru.lct.heat.route.ObstacleLayer;
@@ -17,7 +18,12 @@ public final class Evaluator {
     private final Rules rules;
 
     public Evaluator(Context ctx) {
+        this(ctx, HeatProperties.Mode.ECONOMY);
+    }
+
+    public Evaluator(Context ctx, HeatProperties.Mode mode) {
         this.ctx = ctx;
+        this.mode = mode;
         this.rules = ctx.rules;
     }
 
@@ -44,8 +50,10 @@ public final class Evaluator {
         return null;
     }
 
+    private final HeatProperties.Mode mode;
+
     public SegInfo check(Net net, Net.Edge e, int i) {
-        ObstacleLayer layer = ctx.layer(e.dn);
+        ObstacleLayer layer = ctx.layer(e.dn, mode);
         return layer.check(e.path.get(i), e.path.get(i + 1), ownExemption(net, e, i), lineExemption(net, e, i));
     }
 

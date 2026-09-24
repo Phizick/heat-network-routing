@@ -158,3 +158,15 @@ heat:
     max-slope: 0.10
     k-threshold: 3.0
     k-per-m: 0.10
+
+  # Монтажный режим (installation): углы 45/90 по сетке квартала, вдоль улиц, без параллельных прокладок
+  installation:
+    enabled: true
+    grid-step-m: 8
+    # grid-angle-deg: 20   # если не задано, берётся преобладающее направление застройки
+    parallel-distance-m: 15
+    parallel-angle-deg: 20
+    parallel-length-m: 15
+    parallel-penalty: 8
+    street-preference: 0.75
+    street-corridor-m: 12

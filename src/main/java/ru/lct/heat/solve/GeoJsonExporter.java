@@ -9,6 +9,7 @@ import java.util.Map;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Geometry;
 
+import ru.lct.heat.config.HeatProperties;
 import ru.lct.heat.geo.Projection;
 import ru.lct.heat.model.Scenario;
 import ru.lct.heat.route.Context;
@@ -34,14 +35,20 @@ public final class GeoJsonExporter {
         return export(variants, validation, "2d");
     }
 
+    /** Название режима трассировки для сводки и выгрузки. */
+    public static String modeName(HeatProperties.Mode mode) {
+        return mode == HeatProperties.Mode.INSTALLATION ? "Монтажный" : "Экономичный";
+    }
+
+    /** Префикс id вариантов: e - экономичный, m - монтажный. */
+    public static String modePrefix(HeatProperties.Mode mode) {
+        return mode == HeatProperties.Mode.INSTALLATION ? "m" : "e";
+    }
+
     /** mode: "2d" или "depth" - варианты ранжируются и выгружаются раздельно (R-VAR-04). */
     public Map<String, Object> export(List<Solver.Candidate> variants, Map<Integer, List<String>> validation, String mode) {
         List<Object> features = new ArrayList<>();
-        for (int v = 0; v < variants.size(); v++) {
-            Solver.Candidate c = variants.get(v);
-            int rank = v + 1;
-            exportVariant(c, rank, validation.getOrDefault(v, List.of()), features);
-        }
+        addVariants(features, variants, validation, HeatProperties.Mode.ECONOMY);
         Map<String, Object> fc = new LinkedHashMap<>();
         fc.put("type", "FeatureCollection");
         fc.put("name", "heat_routing_" + mode);
@@ -49,8 +56,29 @@ public final class GeoJsonExporter {
         return fc;
     }
 
+    /** Добавляет варианты одного режима трассировки: id вариантов получают префикс режима. */
+    public void addVariants(List<Object> features, List<Solver.Candidate> variants,
+                            Map<Integer, List<String>> validation, HeatProperties.Mode routingMode) {
+        for (int v = 0; v < variants.size(); v++) {
+            exportVariant(variants.get(v), v + 1, validation.getOrDefault(v, List.of()), features, routingMode);
+        }
+    }
+
+    public Map<String, Object> collection(String name, List<Object> features) {
+        Map<String, Object> fc = new LinkedHashMap<>();
+        fc.put("type", "FeatureCollection");
+        fc.put("name", name);
+        fc.put("features", features);
+        return fc;
+    }
+
     private void exportVariant(Solver.Candidate c, int rank, List<String> validation, List<Object> out) {
-        String vid = "v" + rank;
+        exportVariant(c, rank, validation, out, HeatProperties.Mode.ECONOMY);
+    }
+
+    private void exportVariant(Solver.Candidate c, int rank, List<String> validation, List<Object> out,
+                               HeatProperties.Mode routingMode) {
+        String vid = modePrefix(routingMode) + rank;
         Net net = c.net;
         Eval ev = c.eval;
         Map<Integer, Object> nodeIds = new HashMap<>();
@@ -129,6 +157,8 @@ public final class GeoJsonExporter {
         s.put("object_type", "variant_summary");
         s.put("variant_id", vid);
         s.put("rank", rank);
+        s.put("routing_mode", routingMode.name().toLowerCase());
+        s.put("routing_mode_name", modeName(routingMode));
         s.put("construction_cost", round(ev.constructionCost));
         s.put("chamber_construction_cost", round(ev.chamberCost));
         s.put("existing_chamber_tie_in_count", ev.existingTieInCount);

@@ -54,6 +54,30 @@ public final class Blockers {
         return false;
     }
 
+    /** Отрезок идёт вплотную и почти вдоль уже построенной новой трубы (монтажный режим). */
+    public boolean parallelToExisting(Coordinate a, Coordinate b, double distance, double angleDeg) {
+        if (empty) {
+            return false;
+        }
+        LineSegment seg = new LineSegment(a, b);
+        Envelope env = new Envelope(a, b);
+        env.expandBy(distance);
+        for (Object o : index.query(env)) {
+            LineSegment s = (LineSegment) o;
+            if (seg.distance(s) > distance) {
+                continue;
+            }
+            double angle = Math.abs(Math.toDegrees(Math.atan2(
+                    (b.x - a.x) * (s.p1.y - s.p0.y) - (b.y - a.y) * (s.p1.x - s.p0.x),
+                    (b.x - a.x) * (s.p1.x - s.p0.x) + (b.y - a.y) * (s.p1.y - s.p0.y))));
+            double acute = Math.min(angle, 180 - angle);
+            if (acute <= angleDeg && seg.getLength() > 1e-6) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean collinearOverlap(LineSegment a, LineSegment b) {
         if (Math.abs(a.orientationIndex(b.p0)) + Math.abs(a.orientationIndex(b.p1)) != 0) {
             return false;

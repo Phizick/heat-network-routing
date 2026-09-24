@@ -49,7 +49,9 @@ public final class Context {
     /** Индекс полигона-здания для каждой ОКС или -1 (R-IN-02). */
     public final int[] ownPolygon;
     public final List<String> diagnostics = new ArrayList<>();
-    private final Map<Integer, ObstacleLayer> layers = new HashMap<>();
+    private final Map<String, ObstacleLayer> layers = new HashMap<>();
+    /** Базовое направление сетки квартала (радианы): преобладающее направление стен зданий. */
+    private Double gridAngle;
     private final Map<String, List<Port>> ports = new HashMap<>();
     /** Верхняя оценка ДУ в сети: по суммарному расходу всех ОКС. Узлы ставим так, чтобы они были допустимы и при нём. */
     public final int maxDn;
@@ -134,8 +136,50 @@ public final class Context {
         }
     }
 
-    public synchronized ObstacleLayer layer(int dn) {
-        return layers.computeIfAbsent(clearanceClass(dn), d -> new ObstacleLayer(this, d));
+    public ObstacleLayer layer(int dn) {
+        return layer(dn, HeatProperties.Mode.ECONOMY);
+    }
+
+    public synchronized ObstacleLayer layer(int dn, HeatProperties.Mode mode) {
+        int cls = clearanceClass(dn);
+        return layers.computeIfAbsent(mode + ":" + cls, k -> new ObstacleLayer(this, cls, mode));
+    }
+
+    /**
+     * Базовое направление сетки квартала: преобладающее направление стен зданий (по сумме длин рёбер).
+     * Трассы монтажного режима идут вдоль него и под 45/90 к нему.
+     */
+    public synchronized double gridAngle() {
+        if (gridAngle != null) {
+            return gridAngle;
+        }
+        Double fixed = rules.props().getInstallation().getGridAngleDeg();
+        if (fixed != null) {
+            gridAngle = Math.toRadians(fixed);
+            return gridAngle;
+        }
+        double[] hist = new double[90];
+        for (int idx : restrictionsInArea) {
+            Scenario.RestrictionFeature r = scenario.restrictions.get(idx);
+            if (!OKS_TYPE.equals(r.type)) {
+                continue;
+            }
+            Coordinate[] cs = r.geom.getCoordinates();
+            for (int i = 0; i + 1 < cs.length; i++) {
+                double a = Math.toDegrees(Math.atan2(cs[i + 1].y - cs[i].y, cs[i + 1].x - cs[i].x));
+                int bin = (int) Math.floor(((a % 90) + 90) % 90);
+                hist[bin] += cs[i].distance(cs[i + 1]);
+            }
+        }
+        int best = 0;
+        for (int i = 1; i < 90; i++) {
+            if (hist[i] > hist[best]) {
+                best = i;
+            }
+        }
+        gridAngle = Math.toRadians(best + 0.5);
+        diagnostics.add("монтажный режим: сетка квартала под " + (best + 0.5) + "°");
+        return gridAngle;
     }
 
     int clearanceClass(int dn) {
@@ -157,11 +201,15 @@ public final class Context {
      * Порты ОКС от ближайшей точки границы к дальним (R-OKS-02 + допущение 4): следующий пробуется,
      * если из предыдущего нет маршрута (например, он ведёт во двор, закрытый отступами соседей).
      */
-    public synchronized List<Port> ports(int oksIdx, int dn) {
-        String key = oksIdx + ":" + dn;
+    public List<Port> ports(int oksIdx, int dn) {
+        return ports(oksIdx, dn, HeatProperties.Mode.ECONOMY);
+    }
+
+    public synchronized List<Port> ports(int oksIdx, int dn, HeatProperties.Mode mode) {
+        String key = mode + ":" + oksIdx + ":" + dn;
         List<Port> cached = ports.get(key);
         if (cached == null) {
-            cached = computePorts(oksIdx, layer(dn));
+            cached = computePorts(oksIdx, layer(dn, mode));
             ports.put(key, cached);
         }
         return cached;

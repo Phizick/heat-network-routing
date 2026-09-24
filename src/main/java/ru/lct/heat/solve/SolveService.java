@@ -18,10 +18,10 @@ import org.springframework.stereotype.Service;
 import ru.lct.heat.config.HeatProperties;
 import ru.lct.heat.dataset.DatasetRepository;
 import ru.lct.heat.geo.Projection;
-import ru.lct.heat.model.Rules;
 import ru.lct.heat.model.Scenario;
 import ru.lct.heat.route.Context;
 import ru.lct.heat.tree.Eval;
+import ru.lct.heat.tree.Solver;
 import ru.lct.heat.tree.Solver;
 import ru.lct.heat.tree.Validator;
 
@@ -36,9 +36,11 @@ public class SolveService {
     private final HeatProperties props;
     private final ObjectMapper mapper;
     private final ThreadPoolTaskExecutor solveExecutor;
+    private final RoutingEngine engine;
 
     public SolveService(SolutionRepository solutions, DatasetRepository datasets, HeatProperties props,
-                        ObjectMapper mapper, ThreadPoolTaskExecutor solveExecutor) {
+                        ObjectMapper mapper, ThreadPoolTaskExecutor solveExecutor, RoutingEngine engine) {
+        this.engine = engine;
         this.solutions = solutions;
         this.datasets = datasets;
         this.props = props;
@@ -76,82 +78,66 @@ public class SolveService {
             if (scenario.network.isEmpty()) {
                 throw new IllegalStateException("в датасете нет существующей сети heat_network");
             }
-            Context ctx = new Context(scenario, new Rules(props), srid);
-            Solver solver = new Solver(ctx, budgetSeconds);
-            List<Solver.Candidate> variants = solver.solve();
-            Validator validator = new Validator(ctx);
-            Map<Integer, List<String>> validation = new HashMap<>();
-            for (int v = 0; v < variants.size(); v++) {
-                validation.put(v, validator.validate(variants.get(v).net, variants.get(v).eval));
+            double budget = budgetSeconds > 0 ? budgetSeconds : props.getSolver().getTimeBudgetS();
+            Context ctx = engine.context(scenario, srid);
+
+            List<HeatProperties.Mode> modes = new ArrayList<>();
+            modes.add(HeatProperties.Mode.ECONOMY);
+            if (props.getInstallation().isEnabled()) {
+                modes.add(HeatProperties.Mode.INSTALLATION);
             }
-            GeoJsonExporter exporter = new GeoJsonExporter(ctx, props.getCrs().getCalc());
-            String json = mapper.writeValueAsString(exporter.export(variants, validation, "2d"));
-            Map<String, Object> summary = summary(ctx, variants, validation, System.currentTimeMillis() - started,
-                    budgetSeconds > 0 ? budgetSeconds : props.getSolver().getTimeBudgetS());
+            List<RoutingEngine.ModeResult> results = new ArrayList<>();
+            List<Map<String, Object>> modeSummaries = new ArrayList<>();
+            for (HeatProperties.Mode mode : modes) {
+                RoutingEngine.ModeResult r = engine.run(ctx, mode, budget);
+                results.add(r);
+                modeSummaries.add(engine.summary(r));
+                log.info("расчёт {}: режим {} - {} вариантов", id, mode, r.variants.size());
+            }
+
+            String json = mapper.writeValueAsString(engine.export(ctx, results));
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("elapsedMs", System.currentTimeMillis() - started);
+            summary.put("oksCount", ctx.scenario.oks.size());
+            summary.put("totalFlowTph", ctx.scenario.oks.stream().mapToDouble(o -> o.flow).sum());
+            summary.put("existingNetworkComponents", ctx.network.components);
+            summary.put("diagnostics", ctx.diagnostics);
+            summary.put("timeBudgetS", budget);
+            summary.put("modes", modeSummaries);
+            // совместимость: variants - экономичный режим
+            summary.put("variants", modeSummaries.get(0).get("variants"));
+
             String depthJson = null;
             if (props.getDepth().isEnabled()) {
                 // режим с глубиной: отдельный файл и своё ранжирование (R-VAR-04)
-                Solver.DepthResult depth = solver.depthVariants(variants);
-                Map<Integer, List<String>> depthValidation = new HashMap<>();
-                for (int v = 0; v < depth.variants.size(); v++) {
-                    // план тот же, что у 2D-варианта: его проверка + проверки профиля глубины
-                    List<String> errors = new ArrayList<>();
-                    for (int i = 0; i < variants.size(); i++) {
-                        if (variants.get(i).net == depth.variants.get(v).net) {
-                            errors.addAll(validation.get(i));
+                GeoJsonExporter exporter = new GeoJsonExporter(ctx, props.getCrs().getCalc());
+                List<Object> depthFeatures = new ArrayList<>();
+                List<Map<String, Object>> depthSummaries = new ArrayList<>();
+                for (RoutingEngine.ModeResult r : results) {
+                    Solver.DepthResult depth = new Solver(ctx, budget, r.mode).depthVariants(r.variants);
+                    Map<Integer, List<String>> depthValidation = new HashMap<>();
+                    for (int v = 0; v < depth.variants.size(); v++) {
+                        List<String> errors = new ArrayList<>();
+                        for (int i = 0; i < r.variants.size(); i++) {
+                            if (r.variants.get(i).net == depth.variants.get(v).net) {
+                                errors.addAll(r.validation.get(i));
+                            }
                         }
+                        errors.addAll(depth.problems.get(v));
+                        depthValidation.put(v, errors);
                     }
-                    errors.addAll(depth.problems.get(v));
-                    depthValidation.put(v, errors);
+                    exporter.addVariants(depthFeatures, depth.variants, depthValidation, r.mode);
+                    depthSummaries.add(engine.summary(new RoutingEngine.ModeResult(r.mode, depth.variants, depthValidation)));
                 }
-                depthJson = mapper.writeValueAsString(exporter.export(depth.variants, depthValidation, "depth"));
-                summary.put("depthVariants", variantList(depth.variants, depthValidation));
+                depthJson = mapper.writeValueAsString(exporter.collection("heat_routing_depth", depthFeatures));
+                summary.put("depthModes", depthSummaries);
+                summary.put("depthVariants", depthSummaries.get(0).get("variants"));
             }
             solutions.markReady(id, summary, json, depthJson);
-            log.info("расчёт {}: {} вариантов за {} мс", id, variants.size(), System.currentTimeMillis() - started);
+            log.info("расчёт {}: {} режимов за {} мс", id, results.size(), System.currentTimeMillis() - started);
         } catch (Exception e) {
             log.error("расчёт {}: ошибка", id, e);
             solutions.markFailed(id, e.getMessage() == null ? e.toString() : e.getMessage());
         }
-    }
-
-    private Map<String, Object> summary(Context ctx, List<Solver.Candidate> variants,
-                                        Map<Integer, List<String>> validation, long elapsedMs, double budget) {
-        Map<String, Object> s = new LinkedHashMap<>();
-        s.put("elapsedMs", elapsedMs);
-        s.put("oksCount", ctx.scenario.oks.size());
-        s.put("totalFlowTph", ctx.scenario.oks.stream().mapToDouble(o -> o.flow).sum());
-        s.put("existingNetworkComponents", ctx.network.components);
-        s.put("diagnostics", ctx.diagnostics);
-        s.put("timeBudgetS", budget);
-        s.put("variants", variantList(variants, validation));
-        return s;
-    }
-
-    private List<Map<String, Object>> variantList(List<Solver.Candidate> variants, Map<Integer, List<String>> validation) {
-        List<Map<String, Object>> list = new ArrayList<>();
-        for (int v = 0; v < variants.size(); v++) {
-            Solver.Candidate c = variants.get(v);
-            Eval e = c.eval;
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("variant_id", "v" + (v + 1));
-            m.put("rank", v + 1);
-            m.put("strategy", c.strategy);
-            m.put("score", e.score);
-            m.put("calculated_cost", Math.round(e.calculatedCost));
-            m.put("construction_cost", Math.round(e.constructionCost));
-            m.put("pipe_cost", Math.round(e.pipeCost));
-            m.put("chamber_construction_cost", Math.round(e.chamberCost));
-            m.put("existing_chamber_tie_in_count", e.existingTieInCount);
-            m.put("unconnected_penalty", Math.round(e.unconnectedPenalty));
-            m.put("new_network_length", Math.round(e.length * 100) / 100.0);
-            m.put("new_chambers", e.chamberCosts.size());
-            m.put("tie_ins", c.net.nodes.values().stream().filter(n -> n.root).count());
-            m.put("unconnected", c.net.unconnected.size());
-            m.put("validation_errors", validation.get(v));
-            m.put("notes", new ArrayList<>(c.net.notes));
-            list.add(m);
-        }
-        return list;
     }
 }

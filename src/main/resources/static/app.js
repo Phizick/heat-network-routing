@@ -111,8 +111,9 @@ function drawInput(fc) {
 }
 
 let resultFc = null;
-let selected = 'v1';
+let selected = 'e1';
 let mode = '2d';
+let routingMode = 'economy';
 let currentSolution = null;
 
 function drawResult() {
@@ -253,11 +254,23 @@ async function selectSolution(id) {
 
 async function showMode(id) {
   const sum = currentSolution.summary;
-  const hasDepth = !!sum.depthVariants;
+  const hasDepth = !!(sum.depthModes || sum.depthVariants);
   document.querySelector('input[name="mode"][value="depth"]').disabled = !hasDepth;
   if (!hasDepth) mode = '2d';
   document.querySelector(`input[name="mode"][value="${mode}"]`).checked = true;
-  const variants = mode === 'depth' ? sum.depthVariants : sum.variants;
+
+  // режимы трассировки: экономичный и монтажный
+  const modes = (mode === 'depth' ? sum.depthModes : sum.modes)
+    || [{ mode: 'economy', mode_name: 'Экономичный', variants: mode === 'depth' ? sum.depthVariants : sum.variants }];
+  if (!modes.some((m) => m.mode === routingMode)) routingMode = modes[0].mode;
+  $('routingModes').innerHTML = modes.map((m) => `<label><input type="radio" name="routing" value="${m.mode}"
+    ${m.mode === routingMode ? 'checked' : ''}> ${esc(m.mode_name)}</label>`).join('');
+  document.querySelectorAll('input[name="routing"]').forEach((r) => r.addEventListener('change', () => {
+    routingMode = document.querySelector('input[name="routing"]:checked').value;
+    showMode(id).catch(showError);
+  }));
+  const variants = (modes.find((m) => m.mode === routingMode) || modes[0]).variants || [];
+
   $('solveStatus').innerHTML = `Готово за <b>${fmt(sum.elapsedMs / 1000, 1)} с</b> · ОКС: <b>${sum.oksCount}</b>, расход ${fmt(sum.totalFlowTph, 2)} т/ч`
     + (sum.diagnostics && sum.diagnostics.length ? `<br><span class="warn">${sum.diagnostics.map(esc).join('<br>')}</span>` : '');
   resultFc = await api(`/api/solutions/${id}/geojson?mode=${mode}`);
@@ -273,7 +286,7 @@ async function showMode(id) {
   const view = { variants };
   tbody.querySelectorAll('tr').forEach((tr) => tr.addEventListener('click', () => selectVariant(tr.dataset.v, view)));
   $('variantsBox').hidden = false;
-  selectVariant(variants[0] ? variants[0].variant_id : 'v1', view);
+  selectVariant(variants[0] ? variants[0].variant_id : 'e1', view);
 }
 
 document.querySelectorAll('input[name="mode"]').forEach((r) => r.addEventListener('change', () => {

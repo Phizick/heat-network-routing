@@ -31,6 +31,8 @@ public class HeatProperties {
     private Solver solver = new Solver();
     private Variants variants = new Variants();
     private Depth depth = new Depth();
+    /** Монтажный режим: углы 45/90 по сетке квартала, вдоль улиц, без параллельных прокладок. */
+    private Installation installation = new Installation();
 
     @Data
     public static class Crs {
@@ -164,6 +166,29 @@ public class HeatProperties {
         private int maxSizingIterations = 10;
         /** Сколько расчётов идёт одновременно (остальные ждут в очереди). */
         private int workers = 2;
+    }
+
+    /** Режим расчёта: экономичный (минимум S) или монтажный (удобство строительства). */
+    public enum Mode { ECONOMY, INSTALLATION }
+
+    @Data
+    public static class Installation {
+        private boolean enabled = true;
+        /** Шаг сетки квартала, м: по ней идут трассы, диагонали дают ровно 45°. */
+        private double gridStepM = 8;
+        /** Базовое направление сетки, градусы. Пусто - берём преобладающее направление застройки. */
+        private Double gridAngleDeg;
+        /** Ближе этого расстояния к существующей линии при малом угле трасса считается параллельной. */
+        private double parallelDistanceM = 15;
+        private double parallelAngleDeg = 20;
+        /** Длина совпадения, начиная с которой параллельная прокладка запрещена. */
+        private double parallelLengthM = 15;
+        /** Во сколько раз дороже для поиска отрезок, идущий параллельно другой трубе. */
+        private double parallelPenalty = 8;
+        /** Предпочтение уличного коридора: во сколько раз дешевле для поиска (на стоимость не влияет). */
+        private double streetPreference = 0.75;
+        /** Ширина коридора вдоль дороги, в котором ведём трассу (от края зоны отступа), м. */
+        private double streetCorridorM = 12;
     }
 
     @Data
