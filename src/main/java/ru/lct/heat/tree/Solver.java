@@ -478,6 +478,13 @@ public final class Solver {
         return layer.gridAligned(a, b) || a.distance(b) <= layer.gridStep() * 1.5;
     }
 
+    /** Отделка трассы: спрямление, подтяжка узлов и ещё раз спрямление. */
+    private void polish(Net net) {
+        straighten(net);
+        alignJunctions(net);
+        straighten(net);
+    }
+
     /** Спрямление (R-GEO-03): убираем вершины, без которых трасса остаётся допустимой. */
     void straighten(Net net) {
         for (Net.Edge e : net.edges.values()) {
@@ -486,26 +493,30 @@ public final class Solver {
     }
 
     private void straightenEdge(Net net, Net.Edge e) {
+        // у ввода в здание первый отрезок (R-OKS-02) неприкосновенен
+        int first = e.fromOks ? 1 : 0;
         boolean changed = true;
         while (changed) {
             changed = false;
-            int first = e.fromOks ? 2 : 1;
-            for (int i = first; i + 1 < e.path.size(); i++) {
-                List<Coordinate> trial = new ArrayList<>(e.path);
-                trial.remove(i);
-                if (!anglesOk(trial) || !straightenAllowed(e, trial, i)) {
-                    continue;
+            for (int i = first; i + 2 < e.path.size() && !changed; i++) {
+                // сначала пробуем самое длинное спрямление: ступеньки убираются целиком,
+                // по одной вершине их не разобрать - промежуточный отрезок вышел бы не по сетке
+                for (int j = e.path.size() - 1; j > i + 1; j--) {
+                    List<Coordinate> trial = new ArrayList<>(e.path.subList(0, i + 1));
+                    trial.addAll(e.path.subList(j, e.path.size()));
+                    if (!anglesOk(trial) || !straightenAllowed(e, trial, i + 1)) {
+                        continue;
+                    }
+                    List<Coordinate> saved = e.path;
+                    e.path = trial;
+                    Blockers blockers = new Blockers(net.segments(e.id));
+                    if (evaluator.check(net, e, i) != null
+                            && !blockers.blocks(trial.get(i), trial.get(i + 1), i == 0, i + 2 == trial.size())) {
+                        changed = true;
+                        break;
+                    }
+                    e.path = saved;
                 }
-                List<Coordinate> saved = e.path;
-                e.path = trial;
-                Blockers blockers = new Blockers(net.segments(e.id));
-                boolean ok = evaluator.check(net, e, i - 1) != null
-                        && !blockers.blocks(trial.get(i - 1), trial.get(i), i - 1 == 0, i == trial.size() - 1);
-                if (ok) {
-                    changed = true;
-                    break;
-                }
-                e.path = saved;
             }
         }
         // почти коллинеарные вершины (< 1°) склеиваем
@@ -937,10 +948,11 @@ public final class Solver {
 
     private Candidate finish(Net net, String strategy) {
         snapTieInsToChambers(net);
-        straighten(net);
-        alignJunctions(net);
-        straighten(net);
+        polish(net);
         sizeAndValidate(net, true);
+        // перестроение поддерева при росте ДУ выдаёт сырые трассы: отделываем ещё раз
+        polish(net);
+        sizeAndValidate(net);
         Eval e = evaluator.evaluate(net);
         log.info("{}: S={} трубы={} камеры={} врезки={} L={} врезок={} неподкл={}", strategy, round(e.score),
                 round(e.pipeCost / 1e6), round(e.chamberCost / 1e6), round(e.existingTieInCost / 1e6), round(e.length),
