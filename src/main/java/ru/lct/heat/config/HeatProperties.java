@@ -22,7 +22,7 @@ public class HeatProperties {
     private Chambers chambers = new Chambers();
     /** Таблица 2: правила по restriction_type. */
     private Map<String, Restriction> restrictions = new LinkedHashMap<>();
-    /** Поведение для restriction_type, которых нет в таблице 2. */
+    /** Поведение для restriction_type, которых нет в таблице 2 (ответ организаторов: игнорировать). */
     private Restriction unknownRestriction = new Restriction();
     /** Пересечение существующей heat_network без врезки (строка таблицы 2). */
     private Restriction existingNetworkCrossing = new Restriction();
@@ -70,6 +70,11 @@ public class HeatProperties {
          * На конкурсном наборе включение (25 м) удлиняет трассу примерно на 240 м и ухудшает S с 13,7 до 14,9.
          */
         private double preferExistingWithinM = 0;
+        /**
+         * Врезаться ближе этого расстояния к месту, где новая сеть пересекает ту же линию, нельзя
+         * (ответ организаторов на вопрос 3).
+         */
+        private double minDistanceToCrossingM = 2;
         private List<DnRange> newCostByMaxDn = new ArrayList<>();
     }
 
@@ -80,7 +85,7 @@ public class HeatProperties {
         private double value;
     }
 
-    public enum Rule { FORBID, SPECIAL }
+    public enum Rule { FORBID, SPECIAL, IGNORE }
 
     public enum Zone { POLYGON_PLUS, POINT_PM }
 

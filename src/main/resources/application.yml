@@ -77,6 +77,8 @@ heat:
     # радиус, в котором новая камера не ставится при наличии свободной существующей;
     # 0 - выключено, действует только правило ТЗ (10 м выше)
     prefer-existing-within-m: 0
+    # ответ организаторов: врезка не ближе 2 м к месту пересечения новой сетью той же линии
+    min-distance-to-crossing-m: 2
     new-cost-by-max-dn:
       - {from: 50,   to: 200,  value: 3000000}
       - {from: 250,  to: 500,  value: 5000000}
@@ -108,8 +110,8 @@ heat:
     "[heat_network]":    {rule: special, offset: 1.0, zone: point_pm, extra-m: 2, k-spec: 1.05, own-width: 1.37,
                           vertical: above_or_below, depth-top: 3.0, own-height: 0.56, clearance: 0.5}
 
-  # Допущение (docs/architecture.md): неизвестный тип = запрет с отступом 1 м + предупреждение
-  unknown-restriction: {rule: forbid, offset: 1.0}
+  # Ответ организаторов: неизвестный restriction_type игнорируется (в диагностику пишем предупреждение)
+  unknown-restriction: {rule: ignore}
   # Габарит существующей линии берётся из таблицы 1 по её diameter
   existing-network-crossing: {rule: special, offset: 1.0, zone: point_pm, extra-m: 2, k-spec: 1.05,
                               vertical: above_or_below, depth-top: 3.0, clearance: 0.5}

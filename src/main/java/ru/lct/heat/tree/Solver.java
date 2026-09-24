@@ -7,7 +7,9 @@ import java.util.List;
 import java.util.Random;
 
 import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.LineSegment;
 import org.locationtech.jts.geom.LineString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +19,7 @@ import ru.lct.heat.model.Rules;
 import ru.lct.heat.model.Scenario;
 import ru.lct.heat.route.Blockers;
 import ru.lct.heat.route.Context;
+import ru.lct.heat.route.ExistingNetwork;
 import ru.lct.heat.route.ExistingTargets;
 import ru.lct.heat.route.Goal;
 import ru.lct.heat.route.ObstacleLayer;
@@ -119,7 +122,7 @@ public final class Solver {
         }
         ObstacleLayer layer = ctx.layer(dn);
         TargetSet targets = ExistingTargets.union(
-                new ExistingTargets(ctx, dn, usedExistingChambers(net), forbidden, roots(net, null)),
+                new ExistingTargets(ctx, dn, usedExistingChambers(net), crossingForbidden(net, forbidden), roots(net, null)),
                 new TreeTargets(net, ctx, layer, oks.flow, dn));
         Blockers blockers = new Blockers(net.segments(null));
         boolean limitHit = false;
@@ -181,6 +184,29 @@ public final class Solver {
         e.fromOks = port.fixed;
         e.dn = rules.minDnForFlow(ctx.scenario.oks.get(k).flow);
         e.flow = ctx.scenario.oks.get(k).flow;
+    }
+
+    /**
+     * Точки, где новая сеть пересекает существующие линии: врезаться ближе
+     * chambers.min-distance-to-crossing-m к ним нельзя (ответ организаторов на вопрос 3).
+     */
+    private List<double[]> crossingForbidden(Net net, List<double[]> base) {
+        double radius = rules.props().getChambers().getMinDistanceToCrossingM();
+        if (radius <= 0) {
+            return base;
+        }
+        List<double[]> out = new ArrayList<>(base);
+        for (LineSegment s : net.segments(null)) {
+            Envelope env = new Envelope(s.p0, s.p1);
+            for (Object o : ctx.network.segIndex.query(env)) {
+                ExistingNetwork.Seg line = (ExistingNetwork.Seg) o;
+                Coordinate x = s.intersection(line.seg);
+                if (x != null) {
+                    out.add(new double[] {x.x, x.y, radius});
+                }
+            }
+        }
+        return out;
     }
 
     private static List<Coordinate> roots(Net net, Integer except) {
@@ -359,7 +385,7 @@ public final class Solver {
         int[] exempt = parent.kind == Net.Kind.EXISTING_CHAMBER ? ctx.network.chamberLines[parent.chamber]
                 : parent.root ? ctx.tieAt(parent.c).lines : null;
         TargetSet target = movableRoot
-                ? new ExistingTargets(ctx, dn, usedExistingChambers(net), List.of(), roots(net, parent.id))
+                ? new ExistingTargets(ctx, dn, usedExistingChambers(net), crossingForbidden(net, List.of()), roots(net, parent.id))
                 : pointTarget(parent.c, exempt);
         Blockers blockers = new Blockers(net.segments(e.id));
         for (Router.Start start : starts) {
@@ -532,7 +558,8 @@ public final class Solver {
                         : "нет допустимого выхода из здания: точка окружена запретными зонами");
                 continue;
             }
-            TargetSet targets = new ExistingTargets(ctx, dn, usedExistingChambers(net), forbidden, roots(net, null));
+            TargetSet targets = new ExistingTargets(ctx, dn, usedExistingChambers(net),
+                    crossingForbidden(net, forbidden), roots(net, null));
             Blockers blockers = new Blockers(net.segments(null));
             boolean done = false;
             for (Context.Port port : ports) {

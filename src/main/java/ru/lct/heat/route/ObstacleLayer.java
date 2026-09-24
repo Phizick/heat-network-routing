@@ -25,6 +25,7 @@ import org.locationtech.jts.simplify.TopologyPreservingSimplifier;
 import ru.lct.heat.config.HeatProperties;
 import ru.lct.heat.config.HeatProperties.Restriction;
 import ru.lct.heat.config.HeatProperties.Rule;
+import ru.lct.heat.config.HeatProperties.Zone;
 import ru.lct.heat.model.Rules;
 import ru.lct.heat.model.Scenario;
 
@@ -44,6 +45,9 @@ public final class ObstacleLayer {
         Geometry core;
         /** Подготовленная геометрия объекта: быстрый отсев отрезков, которые его не пересекают. */
         PreparedGeometry corePrep;
+        /** Дорога/трамвай, заданные линией: зона спецучастка от центральной линии (ответ организаторов). */
+        Geometry specialZone;
+        PreparedGeometry specialPrep;
         Restriction rule;
         String type;
         int line = -1;
@@ -101,6 +105,9 @@ public final class ObstacleLayer {
         for (int idx : ctx.restrictionsInArea) {
             Scenario.RestrictionFeature r = ctx.scenario.restrictions.get(idx);
             Restriction rule = rules.restriction(r.type);
+            if (rule.getRule() == Rule.IGNORE) {
+                continue; // тип без правил: по ответу организаторов игнорируем
+            }
             Geometry simplified = TopologyPreservingSimplifier.simplify(r.geom, tol);
             if (rule.getRule() == Rule.FORBID) {
                 double dist = rules.offset(rule, dn) + pipeWidth / 2 + tol + margin;
@@ -116,6 +123,10 @@ public final class ObstacleLayer {
                 s.core = r.geom;
                 s.zone = buffer(simplified, dist);
                 s.halfWidth = dist;
+                if (s.kind == SoftKind.LINE && rule.getZone() == Zone.POLYGON_PLUS) {
+                    // дорога задана линией: спецучасток отмеряется от центральной линии
+                    s.specialZone = buffer(r.geom, rule.getExtraM());
+                }
                 s.rule = rule;
                 s.type = r.type;
                 softs.add(s);
@@ -142,6 +153,9 @@ public final class ObstacleLayer {
         for (Soft s : softs) {
             s.prep = PreparedGeometryFactory.prepare(s.zone);
             s.corePrep = PreparedGeometryFactory.prepare(s.core);
+            if (s.specialZone != null) {
+                s.specialPrep = PreparedGeometryFactory.prepare(s.specialZone);
+            }
             softIndex.insert(s.zone.getEnvelopeInternal(), s);
         }
         softIndex.build();
@@ -510,17 +524,28 @@ public final class ObstacleLayer {
             if (minAngle > 0 && !anglesOk(s.core, a, b, minAngle)) {
                 return false;
             }
-            for (double u : crossings) {
-                if (u - extra < -1e-6 || u + extra > len + 1e-6) {
-                    return false;
+            if (s.specialZone != null) {
+                // дорога линией: спецучасток - часть отрезка внутри полосы «линия ± extra»
+                for (double[] iv : insideIntervals(s.specialZone, s.specialPrep, a, b, len)) {
+                    if (iv[0] < 1e-6 && iv[1] > len - 1e-6 && len > 2 * extra) {
+                        return false; // отрезок не выходит за полосу: не прямой переход, а движение вдоль
+                    }
+                    out.add(new SegInfo.Special(iv[0], iv[1], s.rule.getKSpec(), s.type, s.line, (iv[0] + iv[1]) / 2));
+                    intervals.add(new double[] {iv[0], iv[1]});
                 }
-                // допущение 3: зона отступа пересекается насквозь, спеццена только на ±extra
-                out.add(new SegInfo.Special(u - extra, u + extra, s.rule.getKSpec(), s.type, s.line, u));
-                intervals.add(new double[] {u - extra, u + extra});
+            } else {
+                for (double u : crossings) {
+                    if (u - extra < -1e-6 || u + extra > len + 1e-6) {
+                        return false;
+                    }
+                    // допущение 3: зона отступа пересекается насквозь, спеццена только на ±extra
+                    out.add(new SegInfo.Special(u - extra, u + extra, s.rule.getKSpec(), s.type, s.line, u));
+                    intervals.add(new double[] {u - extra, u + extra});
+                }
             }
         }
         // каждая часть отрезка в зоне отступа должна быть частью перехода, а не проходом вдоль
-        if (s.kind == SoftKind.POLYGON) {
+        if (s.kind == SoftKind.POLYGON || s.specialZone != null) {
             // R-RST-02/05: обычной прокладки в зоне отступа дороги быть не может - только спецучасток
             for (double[] z : zonePieces) {
                 if (z[1] - z[0] < 1e-6) {

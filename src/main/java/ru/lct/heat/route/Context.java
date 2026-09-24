@@ -73,8 +73,8 @@ public final class Context {
             if (area.intersects(r.geom.getEnvelopeInternal())) {
                 restrictionsInArea.add(i);
                 if (!rules.isKnownRestriction(r.type)) {
-                    diagnostics.add("restriction " + r.id + ": тип " + r.type + " без правил, обработан как запрет с отступом "
-                            + rules.props().getUnknownRestriction().getOffset() + " м");
+                    diagnostics.add("restriction " + r.id + ": тип " + r.type + " без правил в таблице 2, "
+                            + describe(rules.props().getUnknownRestriction()));
                 }
             }
         }
@@ -121,6 +121,17 @@ public final class Context {
     /** Линии, занятые примыкания и ДУ в точке врезки новой камеры. */
     public ExistingNetwork.At tieAt(Coordinate x) {
         return network.at(x, Math.max(rules.props().getGeometry().getTopologySnapToleranceM(), 0.05));
+    }
+
+    private static String describe(HeatProperties.Restriction r) {
+        switch (r.getRule()) {
+            case IGNORE:
+                return "игнорируется";
+            case SPECIAL:
+                return "обработан как спецпереход";
+            default:
+                return "обработан как запрет с отступом " + r.getOffset() + " м";
+        }
     }
 
     public synchronized ObstacleLayer layer(int dn) {

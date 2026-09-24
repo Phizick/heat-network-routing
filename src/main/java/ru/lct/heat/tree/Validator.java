@@ -121,6 +121,35 @@ public final class Validator {
                 }
             }
         }
+        // Врезка не ближе заданного расстояния к месту, где новая сеть пересекает ту же линию
+        double minCross = rules.props().getChambers().getMinDistanceToCrossingM();
+        if (minCross > 0) {
+            for (Net.Node n : net.nodes.values()) {
+                if (!n.root) {
+                    continue;
+                }
+                int[] lines = n.kind == Net.Kind.EXISTING_CHAMBER ? ctx.network.chamberLines[n.chamber]
+                        : ctx.tieAt(n.c).lines;
+                for (int li : lines) {
+                    Geometry line = ctx.scenario.network.get(li).geom;
+                    for (Net.Edge e : net.edges.values()) {
+                        Geometry path = ctx.gf.createLineString(e.path.toArray(new Coordinate[0]));
+                        Geometry x = path.intersection(line);
+                        for (int g = 0; g < x.getNumGeometries(); g++) {
+                            Coordinate c = x.getGeometryN(g).getCoordinate();
+                            if (c == null) {
+                                continue; // пустое пересечение
+                            }
+                            double d = c.distance(n.c);
+                            if (d > 1e-6 && d < minCross) {
+                                out.add(String.format("R-TIE: врезка в %.2f м от места пересечения линии %s (нужно %.1f м)",
+                                        d, ctx.scenario.network.get(li).id, minCross));
+                            }
+                        }
+                    }
+                }
+            }
+        }
         Set<Integer> connected = new HashSet<>();
         for (Net.Node n : net.nodes.values()) {
             if (n.kind == Net.Kind.OKS) {
@@ -241,6 +270,9 @@ public final class Validator {
                 for (int idx : ctx.restrictionsInArea) {
                     Scenario.RestrictionFeature r = ctx.scenario.restrictions.get(idx);
                     Restriction rule = rules.restriction(r.type);
+                    if (rule.getRule() == Rule.IGNORE) {
+                        continue;
+                    }
                     double need = rules.offset(rule, e.dn) + half + rule.getOwnWidth() / 2;
                     if (!geom.getEnvelopeInternal().intersects(expand(r.geom, need))) {
                         continue;
