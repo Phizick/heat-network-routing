@@ -12,6 +12,30 @@ curl -s http://localhost:8090/api/solutions/$SID | jq .summary.variants     # с
 curl -s "http://localhost:8090/api/solutions/$SID/geojson?download=true" -o result-2d.geojson
 ```
 
+## Расчёт одним запросом (без базы)
+
+Файл на входе, результат в ответе. Подходит для интеграции: ждать статус не нужно.
+
+| Метод | Путь | Что считает |
+|---|---|---|
+| POST | `/api/routing/economy` | **Экономичный** режим: минимум показателя S |
+| POST | `/api/routing/installation` | **Монтажный** режим: углы 45/90 по сетке квартала, вдоль улиц, без параллельных прокладок |
+| POST | `/api/routing/all` | оба режима в одном файле |
+
+`multipart/form-data`, поле `file`; необязательный `?budgetSeconds=60` - бюджет времени на режим.
+Ответ - GeoJSON в формате раздела 7 ТЗ. У каждого варианта в `variant_summary` проставлены
+`routing_mode` (`economy`/`installation`) и `routing_mode_name` («Экономичный»/«Монтажный»),
+id вариантов начинаются с `e` и `m` соответственно. В конец FeatureCollection добавлено поле
+`summary`: время, статистика разбора входа, диагностика и сводка по каждому режиму.
+
+```bash
+curl -s -F "file=@dataset.geojson" "http://localhost:8090/api/routing/all?budgetSeconds=45" -o result.geojson
+jq '.summary.modes[] | {mode_name, best: .variants[0].score}' result.geojson
+```
+
+Для файлов в сотни мегабайт и больше лучше асинхронный путь ниже: там вход пишется на диск
+и в базу потоково, а расчёт идёт в очереди.
+
 ## Датасеты
 
 ### POST /api/datasets
@@ -67,7 +91,8 @@ curl -s "http://localhost:8090/api/solutions/$SID/geojson?download=true" -o resu
 
 ### POST /api/datasets/{id}/solve
 
-Запуск расчёта в фоне (2D и, если включён, режим с глубиной). `202`: `{"id": "...", "status": "PROCESSING"}`.
+Запуск расчёта в фоне. Считаются оба режима трассировки (экономичный и монтажный, если включён
+`heat.installation.enabled`), плюс режим с глубиной. `202`: `{"id": "...", "status": "PROCESSING"}`.
 Необязательный `?budgetSeconds=120` - бюджет времени оптимизатора на этот расчёт (0 или без параметра -
 из конфига `heat.solver.time-budget-s`, максимум 600).
 `409` - датасет ещё не загружен, `404` - датасета нет. Одновременно идут `heat.solver.workers` расчётов,
@@ -79,7 +104,9 @@ curl -s "http://localhost:8090/api/solutions/$SID/geojson?download=true" -o resu
 
 ### GET /api/solutions/{id}
 
-Статус и `summary`:
+Статус и `summary`. Поле `modes` - список режимов трассировки, у каждого свои варианты;
+`variants` оставлено для совместимости и равно вариантам экономичного режима. Для режима с глубиной -
+`depthModes` и `depthVariants`.
 
 ```json
 {
