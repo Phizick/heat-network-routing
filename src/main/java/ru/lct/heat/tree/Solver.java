@@ -481,48 +481,194 @@ public final class Solver {
     /** Спрямление (R-GEO-03): убираем вершины, без которых трасса остаётся допустимой. */
     void straighten(Net net) {
         for (Net.Edge e : net.edges.values()) {
-            boolean changed = true;
-            while (changed) {
-                changed = false;
-                int first = e.fromOks ? 2 : 1;
-                for (int i = first; i + 1 < e.path.size(); i++) {
-                    List<Coordinate> trial = new ArrayList<>(e.path);
-                    trial.remove(i);
-                    if (!anglesOk(trial) || !straightenAllowed(e, trial, i)) {
-                        continue;
-                    }
-                    List<Coordinate> saved = e.path;
-                    e.path = trial;
-                    Blockers blockers = new Blockers(net.segments(e.id));
-                    boolean ok = evaluator.check(net, e, i - 1) != null
-                            && !blockers.blocks(trial.get(i - 1), trial.get(i), i - 1 == 0, i == trial.size() - 1);
-                    if (ok) {
-                        changed = true;
-                        break;
-                    }
-                    e.path = saved;
+            straightenEdge(net, e);
+        }
+    }
+
+    private void straightenEdge(Net net, Net.Edge e) {
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            int first = e.fromOks ? 2 : 1;
+            for (int i = first; i + 1 < e.path.size(); i++) {
+                List<Coordinate> trial = new ArrayList<>(e.path);
+                trial.remove(i);
+                if (!anglesOk(trial) || !straightenAllowed(e, trial, i)) {
+                    continue;
                 }
-            }
-            // почти коллинеарные вершины (< 1°) склеиваем
-            for (int i = (e.fromOks ? 2 : 1); i + 1 < e.path.size(); ) {
-                if (cosTurn(e.path.get(i - 1), e.path.get(i), e.path.get(i + 1)) > Math.cos(Math.toRadians(1))) {
-                    List<Coordinate> trial = new ArrayList<>(e.path);
-                    trial.remove(i);
-                    if (!straightenAllowed(e, trial, i)) {
-                        i++;
-                        continue;
-                    }
-                    List<Coordinate> saved = e.path;
-                    e.path = trial;
-                    if (anglesOk(trial) && evaluator.check(net, e, i - 1) != null
-                            && !new Blockers(net.segments(e.id)).blocks(trial.get(i - 1), trial.get(i), i - 1 == 0, i == trial.size() - 1)) {
-                        continue;
-                    }
-                    e.path = saved;
+                List<Coordinate> saved = e.path;
+                e.path = trial;
+                Blockers blockers = new Blockers(net.segments(e.id));
+                boolean ok = evaluator.check(net, e, i - 1) != null
+                        && !blockers.blocks(trial.get(i - 1), trial.get(i), i - 1 == 0, i == trial.size() - 1);
+                if (ok) {
+                    changed = true;
+                    break;
                 }
-                i++;
+                e.path = saved;
             }
         }
+        // почти коллинеарные вершины (< 1°) склеиваем
+        for (int i = (e.fromOks ? 2 : 1); i + 1 < e.path.size(); ) {
+            if (cosTurn(e.path.get(i - 1), e.path.get(i), e.path.get(i + 1)) > Math.cos(Math.toRadians(1))) {
+                List<Coordinate> trial = new ArrayList<>(e.path);
+                trial.remove(i);
+                if (!straightenAllowed(e, trial, i)) {
+                    i++;
+                    continue;
+                }
+                List<Coordinate> saved = e.path;
+                e.path = trial;
+                if (anglesOk(trial) && evaluator.check(net, e, i - 1) != null
+                        && !new Blockers(net.segments(e.id)).blocks(trial.get(i - 1), trial.get(i), i - 1 == 0, i == trial.size() - 1)) {
+                    continue;
+                }
+                e.path = saved;
+            }
+            i++;
+        }
+    }
+
+    /** Дальше этого узел не переезжает: это была бы уже другая топология, а не подтяжка. */
+    private static final double ALIGN_MAX_MOVE_M = 25.0;
+    /** Сколько ближайших точек пробовать для одного узла. */
+    private static final int ALIGN_CANDIDATES = 6;
+
+    /**
+     * Подтяжка узлов: камера ветвления переезжает туда, где продолжение подходящей к ней трассы
+     * встречает соседнюю ветку. Убирает «крючки» - короткие перемычки, которыми ветка добирает
+     * до узла, стоящего в стороне от её прямой (в монтажном режиме - от её линии сетки).
+     * Врезки не трогаем: они привязаны к существующей сети.
+     */
+    void alignJunctions(Net net) {
+        double best = evaluator.evaluate(net).rankScore();
+        double before = best;
+        long t0 = System.currentTimeMillis();
+        int tried = 0;
+        int moved = 0;
+        for (int id : new ArrayList<>(net.nodes.keySet())) {
+            Net.Node node = net.nodes.get(id);
+            if (node == null || node.kind != Net.Kind.NEW_CHAMBER || node.root) {
+                continue;
+            }
+            for (Coordinate p : alignCandidates(net, node)) {
+                Net trial = net.copy();
+                tried++;
+                if (!moveNode(trial, id, p)) {
+                    continue;
+                }
+                sizeAndValidate(trial);
+                double s = evaluator.evaluate(trial).rankScore();
+                if (s < best - 1e-9) {
+                    net.assign(trial);
+                    best = s;
+                    moved++;
+                    break;
+                }
+            }
+        }
+        log.info("подтяжка узлов: {} попыток, переехало {}, {} мс, S {} -> {}", tried, moved,
+                System.currentTimeMillis() - t0, round(before), round(best));
+    }
+
+    /** Точки, куда имеет смысл двигать узел: пересечения прямых соседних участков. */
+    private List<Coordinate> alignCandidates(Net net, Net.Node node) {
+        List<Coordinate[]> lines = new ArrayList<>();
+        for (Net.Edge e : incident(net, node.id)) {
+            List<Coordinate> out = outward(e, node.id);
+            for (int i = 0; i + 1 < Math.min(out.size(), 3); i++) {
+                lines.add(new Coordinate[] {out.get(i), out.get(i + 1)});
+            }
+        }
+        List<Coordinate> cands = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            for (int j = i + 1; j < lines.size(); j++) {
+                Coordinate x = lineIntersection(lines.get(i), lines.get(j));
+                double move = x == null ? 0 : x.distance(node.c);
+                if (x != null && move > 0.05 && move <= ALIGN_MAX_MOVE_M) {
+                    cands.add(x);
+                }
+            }
+        }
+        cands.sort(Comparator.comparingDouble(c -> c.distance(node.c)));
+        return cands.subList(0, Math.min(cands.size(), ALIGN_CANDIDATES));
+    }
+
+    private List<Net.Edge> incident(Net net, int node) {
+        List<Net.Edge> out = new ArrayList<>(net.childEdges(node));
+        Net.Edge parent = net.parentEdge(node);
+        if (parent != null) {
+            out.add(parent);
+        }
+        return out;
+    }
+
+    /** Путь ребра от узла наружу: у родительского ребра он уже в этом порядке, у дочернего - наоборот. */
+    private static List<Coordinate> outward(Net.Edge e, int node) {
+        if (e.child == node) {
+            return e.path;
+        }
+        List<Coordinate> out = new ArrayList<>(e.path);
+        Collections.reverse(out);
+        return out;
+    }
+
+    private static Coordinate lineIntersection(Coordinate[] a, Coordinate[] b) {
+        double x1 = a[1].x - a[0].x;
+        double y1 = a[1].y - a[0].y;
+        double x2 = b[1].x - b[0].x;
+        double y2 = b[1].y - b[0].y;
+        double den = x1 * y2 - y1 * x2;
+        double scale = Math.hypot(x1, y1) * Math.hypot(x2, y2);
+        if (scale < 1e-9 || Math.abs(den) < 0.05 * scale) {
+            return null; // почти параллельны: пересечение неустойчиво
+        }
+        double t = ((b[0].x - a[0].x) * y2 - (b[0].y - a[0].y) * x2) / den;
+        return new Coordinate(a[0].x + t * x1, a[0].y + t * y1);
+    }
+
+    /** Переносит узел в точку p вместе с концами всех примыкающих участков. false - так нельзя. */
+    private boolean moveNode(Net net, int id, Coordinate p) {
+        Net.Node node = net.nodes.get(id);
+        node.c = new Coordinate(p);
+        List<Net.Edge> touched = incident(net, id);
+        for (Net.Edge e : touched) {
+            if (e.fromOks && e.child == id) {
+                return false; // финальный отрезок ввода в здание (R-OKS-02) не двигаем
+            }
+            List<Coordinate> path = new ArrayList<>(e.path);
+            path.set(e.child == id ? 0 : path.size() - 1, node.c);
+            // концы пути - это узлы, поэтому при слипании вершин убираем внутреннюю
+            for (int i = path.size() - 1; i > 0; i--) {
+                if (path.get(i).distance(path.get(i - 1)) < 0.05) {
+                    path.remove(i - 1 == 0 ? i : i - 1);
+                }
+            }
+            if (path.size() < 2 || !anglesOk(path)) {
+                return false;
+            }
+            e.path = path;
+        }
+        for (Net.Edge e : touched) {
+            straightenEdge(net, e);
+        }
+        for (Net.Edge e : touched) {
+            if (!anglesOk(e.path) || !edgeValid(net, e) || touches(net, e)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Касается ли ребро других участков новой сети вне своих концевых узлов (R-TOP-06). */
+    private boolean touches(Net net, Net.Edge e) {
+        Blockers blockers = new Blockers(net.segments(e.id));
+        for (int i = 0; i + 1 < e.path.size(); i++) {
+            if (blockers.blocks(e.path.get(i), e.path.get(i + 1), i == 0, i + 2 == e.path.size())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ---------------------------------------------------------------- стратегии
@@ -791,6 +937,8 @@ public final class Solver {
 
     private Candidate finish(Net net, String strategy) {
         snapTieInsToChambers(net);
+        straighten(net);
+        alignJunctions(net);
         straighten(net);
         sizeAndValidate(net, true);
         Eval e = evaluator.evaluate(net);

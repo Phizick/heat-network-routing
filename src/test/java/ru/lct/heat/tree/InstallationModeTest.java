@@ -56,6 +56,26 @@ class InstallationModeTest {
                 }
             }
         }
+        // перемычки: короткие участки не по сетке, которыми ветка добирает до узла
+        int stubs = 0;
+        double stubLength = 0;
+        double offGrid = 0;
+        for (Net.Edge e : best.net.edges.values()) {
+            ru.lct.heat.route.ObstacleLayer layer = ctx.layer(e.dn, HeatProperties.Mode.INSTALLATION);
+            for (int i = e.fromOks ? 1 : 0; i + 1 < e.path.size(); i++) {
+                Coordinate a = e.path.get(i);
+                Coordinate b = e.path.get(i + 1);
+                if (layer.gridAligned(a, b)) {
+                    continue;
+                }
+                offGrid += a.distance(b);
+                if (a.distance(b) <= layer.gridStep() * 1.5) {
+                    stubs++;
+                    stubLength += a.distance(b);
+                }
+            }
+        }
+        System.out.printf("МОНТАЖ: перемычек %d на %.0f м, вне сетки всего %.0f м%n", stubs, stubLength, offGrid);
         System.out.printf("МОНТАЖ: %d мс, S=%.3f, L=%.0f м, неподкл=%d, нарушений=%d, сетка %.1f°, поворотов %d из них кратны 45°: %d%n",
                 ms, best.eval.score, best.eval.length, best.net.unconnected.size(),
                 validation.get(0).size(), grid, total, aligned);
