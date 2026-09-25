@@ -19,7 +19,7 @@ services:
     restart: unless-stopped
 
   app:
-    image: heat-routing:1.0.0
+    image: heat-routing:1.1.0
     depends_on:
       db:
         condition: service_healthy

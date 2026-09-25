@@ -1,7 +1,7 @@
 # Образ для поставки: берёт уже собранный jar (target/heat-routing.jar).
 # Так образ под другую архитектуру собирается без эмуляции Maven - jar от архитектуры не зависит.
 # Сборка: mvn package, затем
-#   docker buildx build --platform linux/amd64 -f deploy/Dockerfile -t heat-routing:1.0.0 --load .
+#   docker buildx build --platform linux/amd64 -f deploy/Dockerfile -t heat-routing:1.1.0 --load .
 FROM eclipse-temurin:11-jre-jammy
 
 RUN useradd --system --uid 1001 app \
