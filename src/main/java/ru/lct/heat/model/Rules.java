@@ -71,6 +71,42 @@ public final class Rules {
         return pipe(dn).getWidth();
     }
 
+    /** Габарит трубы с учётом способа прокладки (справочник 6.4 дополнительной задачи). */
+    public double width(int dn, boolean special) {
+        Pipe p = pipe(dn);
+        return special && p.getWidthSpecial() > 0 ? p.getWidthSpecial() : p.getWidth();
+    }
+
+    public double height(int dn, boolean special) {
+        Pipe p = pipe(dn);
+        return special && p.getHeightSpecial() > 0 ? p.getHeightSpecial() : p.getHeight();
+    }
+
+    /** Минимальная глубина верха габарита по ДУ и способу прокладки (правило 4.1). */
+    public double minDepth(int dn, boolean special) {
+        Pipe p = pipe(dn);
+        double v = special && p.getMinDepthSpecial() > 0 ? p.getMinDepthSpecial() : p.getMinDepth();
+        return v > 0 ? v : props.getDepth().getMinDepth();
+    }
+
+    /**
+     * Коэффициент стоимости по глубине (правило 5): из таблицы с шагом step-m, а пока её нет -
+     * по запасной формуле K_гл = 1 при h ≤ порога, иначе 1 + perM · (h − порог).
+     */
+    public double depthFactor(double h) {
+        HeatProperties.Depth d = props.getDepth();
+        for (HeatProperties.DepthCost c : d.getCostByDepth()) {
+            if (h >= c.getFrom() - 1e-9 && (h < c.getTo() - 1e-9 || c.getTo() <= c.getFrom())) {
+                return c.getValue();
+            }
+        }
+        if (!d.getCostByDepth().isEmpty()) {
+            // глубже последней строки таблицы: берём её значение
+            return d.getCostByDepth().get(d.getCostByDepth().size() - 1).getValue();
+        }
+        return h <= d.getKThreshold() + 1e-9 ? 1.0 : 1.0 + d.getKPerM() * (h - d.getKThreshold());
+    }
+
     public double costPerM(int dn) {
         return pipe(dn).getCostM();
     }

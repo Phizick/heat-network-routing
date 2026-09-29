@@ -123,7 +123,7 @@ public class SolveService {
                                 errors.addAll(r.validation.get(i));
                             }
                         }
-                        errors.addAll(depth.problems.get(v));
+                        // проблемы глубины идут отдельным разделом manual_review, а не нарушениями правил
                         depthValidation.put(v, errors);
                     }
                     exporter.addVariants(depthFeatures, depth.variants, depthValidation, r.mode);

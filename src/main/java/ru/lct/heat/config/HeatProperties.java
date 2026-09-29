@@ -59,6 +59,12 @@ public class HeatProperties {
         private double costM;
         private double width;
         private double height;
+        /** Габарит при специальной прокладке (0 - как при обычной). */
+        private double widthSpecial;
+        private double heightSpecial;
+        /** Минимальная глубина верха габарита, м (0 - общая depth.min-depth). */
+        private double minDepth;
+        private double minDepthSpecial;
     }
 
     @Data
@@ -195,13 +201,29 @@ public class HeatProperties {
     public static class Depth {
         private boolean enabled = true;
         private double normalDepth = 3.0;
+        /** Запасная минимальная глубина, если в таблице 1 для ДУ она не задана. */
         private double minDepth = 0.7;
         /** 0 - не ограничена. */
         private double maxDepth;
+        /** Шаг выбора глубины, м (правило 4.2). */
+        private double stepM = 0.5;
         private double maxSlope = 0.10;
+        /**
+         * Таблица коэффициента стоимости по глубине с шагом step-m (правило 5).
+         * Пустая - работает запасная формула k-threshold / k-per-m.
+         */
+        private List<DepthCost> costByDepth = new ArrayList<>();
         /** K_гл = 1 при h ≤ threshold, иначе 1 + perM · (h − threshold). */
         private double kThreshold = 3.0;
         private double kPerM = 0.10;
+    }
+
+    /** Строка таблицы стоимости по глубине: [from, to) метров -> коэффициент. */
+    @Data
+    public static class DepthCost {
+        private double from;
+        private double to;
+        private double value = 1.0;
     }
 
     @Data

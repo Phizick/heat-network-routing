@@ -48,6 +48,8 @@ public final class Eval {
     /** Стоимость новых камер по id узла. */
     public final Map<Integer, Double> chamberCosts = new LinkedHashMap<>();
     public final Map<Integer, Integer> chamberDn = new LinkedHashMap<>();
+    /** Режим с глубиной: пересечения с существующими коммуникациями по id ребра. */
+    public final Map<Integer, List<DepthProfiler.Crossing>> crossings = new LinkedHashMap<>();
     public final List<String> problems = new ArrayList<>();
 
     /** Показатель для сравнения решений в оптимизаторе: невалидные решения хуже любых валидных. */

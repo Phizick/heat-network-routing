@@ -26,12 +26,37 @@ public final class DepthProfiler {
         double b;
         List<double[]> ranges;
         String what;
+        /** Условная глубина верха и высота габарита чужой коммуникации, нормативный просвет. */
+        double otherTop;
+        double otherHeight;
+        double clearance;
+        double minTop;
+        boolean vertical;
 
         Constraint(double a, double b, List<double[]> ranges, String what) {
             this.a = a;
             this.b = b;
             this.ranges = ranges;
             this.what = what;
+        }
+    }
+
+    /** Пересечение с существующей коммуникацией: чем, где, сверху или снизу, с каким просветом. */
+    public static final class Crossing {
+        public final String type;
+        public final double at;
+        public final double depth;
+        public final boolean above;
+        public final double clearance;
+        public final double clearanceRequired;
+
+        Crossing(String type, double at, double depth, boolean above, double clearance, double clearanceRequired) {
+            this.type = type;
+            this.at = at;
+            this.depth = depth;
+            this.above = above;
+            this.clearance = clearance;
+            this.clearanceRequired = clearanceRequired;
         }
     }
 
@@ -51,16 +76,40 @@ public final class DepthProfiler {
         return cfg.getMaxDepth() > 0 ? cfg.getMaxDepth() : 100;
     }
 
-    /** K_гл по глубине верха габарита. */
+    /** Коэффициент стоимости по глубине верха габарита (таблица правила 5 или запасная формула). */
     public double kDepth(double h) {
-        return h <= cfg.getKThreshold() + 1e-9 ? 1.0 : 1.0 + cfg.getKPerM() * (h - cfg.getKThreshold());
+        return rules.depthFactor(h);
+    }
+
+    /** Глубина округляется к сетке шага (правило 4.2) внутри допустимого диапазона. */
+    private double snap(double h, double lo, double hi) {
+        double step = cfg.getStepM();
+        if (step <= 0) {
+            return Math.max(lo, Math.min(hi, h));
+        }
+        double up = Math.ceil((h - 1e-9) / step) * step;
+        double down = Math.floor((h + 1e-9) / step) * step;
+        double best = Double.NaN;
+        for (double c : new double[] {down, up, Math.ceil((lo - 1e-9) / step) * step, Math.floor((hi + 1e-9) / step) * step}) {
+            if (c < lo - 1e-9 || c > hi + 1e-9) {
+                continue;
+            }
+            if (Double.isNaN(best) || better(c, best, h)) {
+                best = c;
+            }
+        }
+        return Double.isNaN(best) ? Math.max(lo, Math.min(hi, h)) : best;
     }
 
     /** Переоценка варианта с профилем глубины: участки режутся на изломах профиля и на h = 3,0 м. */
     public Eval evaluate(Net net, Eval plan, List<String> problems) {
         Eval ev = new Eval();
         for (Net.Edge e : net.edges.values()) {
-            List<double[]> profile = profile(net, e, problems);
+            List<Crossing> crossings = new ArrayList<>();
+            List<double[]> profile = profile(net, e, problems, crossings);
+            if (!crossings.isEmpty()) {
+                ev.crossings.put(e.id, crossings);
+            }
             List<Eval.Part> out = new ArrayList<>();
             double offset = 0;
             for (Eval.Part p : plan.parts.getOrDefault(e.id, List.of())) {
@@ -109,6 +158,7 @@ public final class DepthProfiler {
             }
             ev.parts.put(e.id, out);
         }
+        ev.problems.addAll(problems);
         ev.chamberCost = plan.chamberCost;
         ev.chamberCosts.putAll(plan.chamberCosts);
         ev.chamberDn.putAll(plan.chamberDn);
@@ -124,6 +174,10 @@ public final class DepthProfiler {
 
     /** Профиль ребра: точки (расстояние от начала ребра, глубина верха габарита). */
     List<double[]> profile(Net net, Net.Edge e, List<String> problems) {
+        return profile(net, e, problems, new ArrayList<>());
+    }
+
+    List<double[]> profile(Net net, Net.Edge e, List<String> problems, List<Crossing> crossings) {
         double length = e.length();
         double normal = cfg.getNormalDepth();
         double slope = cfg.getMaxSlope();
@@ -151,6 +205,9 @@ public final class DepthProfiler {
             if (Math.abs(t - curH) > 1e-6) {
                 double rampStart = Math.max(curS, c.a - Math.abs(t - curH) / slope);
                 pts.add(new double[] {rampStart, curH});
+            }
+            if (c.vertical) {
+                crossings.add(crossing(c, t, rules.height(e.dn, true)));
             }
             pts.add(new double[] {c.a, t});
             pts.add(new double[] {c.b, t});
@@ -188,9 +245,20 @@ public final class DepthProfiler {
         return pts;
     }
 
+    /** Описание пересечения для выдачи: сверху или снизу и фактический вертикальный просвет. */
+    private Crossing crossing(Constraint c, double h, double hg) {
+        double at = (c.a + c.b) / 2;
+        if (c.otherTop <= 0) {
+            // правило «не мельче»: проход под объектом без своей отметки (дорога, трамвай)
+            return new Crossing(c.what, at, h, false, h, c.minTop);
+        }
+        boolean above = h + hg <= c.otherTop + 1e-6;
+        double gap = above ? c.otherTop - (h + hg) : h - (c.otherTop + c.otherHeight);
+        return new Crossing(c.what, at, h, above, round2(gap), c.clearance);
+    }
+
     private List<Constraint> constraints(Net net, Net.Edge e) {
         List<Constraint> out = new ArrayList<>();
-        double hg = rules.pipe(e.dn).getHeight();
         double base = 0;
         for (int i = 0; i + 1 < e.path.size(); i++) {
             SegInfo info = evaluator.check(net, e, i);
@@ -206,8 +274,16 @@ public final class DepthProfiler {
                         r = rules.restriction(sp.type);
                         ownHeight = r.getOwnHeight();
                     }
-                    List<double[]> ranges = ranges(r, hg, ownHeight);
-                    out.add(new Constraint(base + Math.max(0, sp.from), base + Math.min(segLen, sp.to), ranges, sp.type));
+                    double hg = rules.height(e.dn, true);
+                    double minH = rules.minDepth(e.dn, true);
+                    List<double[]> ranges = ranges(r, hg, ownHeight, minH);
+                    Constraint c = new Constraint(base + Math.max(0, sp.from), base + Math.min(segLen, sp.to), ranges, sp.type);
+                    c.otherTop = r.getDepthTop();
+                    c.otherHeight = ownHeight;
+                    c.clearance = r.getClearance();
+                    c.minTop = r.getMinTopDepth();
+                    c.vertical = r.getVertical() != Vertical.NONE;
+                    out.add(c);
                 }
             }
             base += segLen;
@@ -221,6 +297,13 @@ public final class DepthProfiler {
                 last.b = Math.max(last.b, c.b);
                 last.ranges = intersect(last.ranges, c.ranges);
                 last.what = last.what + "+" + c.what;
+                // для отчёта берём коммуникацию, которая лежит выше: просвет считается по ней
+                if (c.vertical && (!last.vertical || c.otherTop < last.otherTop)) {
+                    last.otherTop = c.otherTop;
+                    last.otherHeight = c.otherHeight;
+                    last.clearance = c.clearance;
+                    last.vertical = true;
+                }
             } else {
                 merged.add(c);
             }
@@ -229,9 +312,8 @@ public final class DepthProfiler {
     }
 
     /** Допустимые глубины верха габарита при пересечении по вертикальному правилу. */
-    private List<double[]> ranges(Restriction r, double hg, double ownHeight) {
+    private List<double[]> ranges(Restriction r, double hg, double ownHeight, double min) {
         List<double[]> out = new ArrayList<>();
-        double min = cfg.getMinDepth();
         double max = maxDepth();
         Vertical v = r.getVertical();
         if (v == Vertical.BELOW) {
@@ -272,7 +354,7 @@ public final class DepthProfiler {
         double normal = cfg.getNormalDepth();
         double best = Double.NaN;
         for (double[] r : ranges) {
-            double c = Math.max(r[0], Math.min(r[1], normal));
+            double c = snap(Math.max(r[0], Math.min(r[1], normal)), r[0], r[1]);
             if (Double.isNaN(best) || better(c, best, normal)) {
                 best = c;
             }
@@ -289,7 +371,7 @@ public final class DepthProfiler {
             if (lo > hi + 1e-9) {
                 continue;
             }
-            double c = Math.max(lo, Math.min(hi, pref));
+            double c = snap(Math.max(lo, Math.min(hi, pref)), lo, hi);
             if (Double.isNaN(best) || better(c, best, pref)) {
                 best = c;
             }
@@ -319,6 +401,22 @@ public final class DepthProfiler {
             }
         }
         return pts.get(pts.size() - 1)[1];
+    }
+
+    /** Точка на ломаной в s метрах от её начала. */
+    public static Coordinate pointAt(List<Coordinate> line, double s) {
+        double acc = 0;
+        for (int i = 0; i + 1 < line.size(); i++) {
+            Coordinate a = line.get(i);
+            Coordinate b = line.get(i + 1);
+            double len = a.distance(b);
+            if (acc + len >= s - 1e-9 && len > 1e-12) {
+                double f = Math.max(0, Math.min(1, (s - acc) / len));
+                return new Coordinate(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f);
+            }
+            acc += len;
+        }
+        return new Coordinate(line.get(line.size() - 1));
     }
 
     /** Часть ломаной между расстояниями from и to от её начала. */

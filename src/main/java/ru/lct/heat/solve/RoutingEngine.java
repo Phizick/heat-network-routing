@@ -96,6 +96,7 @@ public class RoutingEngine {
             x.put("tie_ins", c.net.nodes.values().stream().filter(n -> n.root).count());
             x.put("unconnected", c.net.unconnected.size());
             x.put("validation_errors", r.validation.get(v));
+            x.put("manual_review", new ArrayList<>(e.problems));
             x.put("notes", new ArrayList<>(c.net.notes));
             list.add(x);
         }

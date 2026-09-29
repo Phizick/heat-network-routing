@@ -13,6 +13,7 @@ import ru.lct.heat.config.HeatProperties;
 import ru.lct.heat.geo.Projection;
 import ru.lct.heat.model.Scenario;
 import ru.lct.heat.route.Context;
+import ru.lct.heat.tree.DepthProfiler;
 import ru.lct.heat.tree.Eval;
 import ru.lct.heat.tree.Net;
 import ru.lct.heat.tree.Solver;
@@ -147,8 +148,25 @@ public final class GeoJsonExporter {
                 if (p.depthStart != null) {
                     props.put("k_depth", Math.round(p.kDepth * 10000) / 10000.0);
                 }
-                out.add(feature(line(p.coords), props));
+                out.add(feature(line(p.coords, p.depthStart, p.depthEnd), props));
                 prevNode = endNode;
+            }
+            // пересечения с существующими коммуникациями (пункты 7.3 и 7.4 доп. задачи)
+            int crossNo = 0;
+            for (DepthProfiler.Crossing x : ev.crossings.getOrDefault(e.id, List.of())) {
+                Map<String, Object> cp = new LinkedHashMap<>();
+                cp.put("id", vid + "_cr_" + (++crossNo) + "_" + e.id);
+                cp.put("object_type", "crossing");
+                cp.put("variant_id", vid);
+                cp.put("restriction_type", x.type);
+                cp.put("passage", x.above ? "above" : "below");
+                cp.put("passage_name", x.above ? "сверху" : "снизу");
+                cp.put("depth", round2(x.depth));
+                cp.put("z", -round2(x.depth));
+                cp.put("vertical_clearance", round2(x.clearance));
+                cp.put("vertical_clearance_required", round2(x.clearanceRequired));
+                cp.put("diameter", e.dn);
+                out.add(feature(point(DepthProfiler.pointAt(e.path, x.at)), cp));
             }
         }
 
@@ -167,6 +185,8 @@ public final class GeoJsonExporter {
         s.put("calculated_cost", round(ev.calculatedCost));
         s.put("new_network_length", round2(ev.length));
         s.put("score", Math.round(ev.score * 10000) / 10000.0);
+        // участки и ОКС, для которых правило по глубине выполнить не удалось (пункты 4.6 и 7.6)
+        s.put("manual_review", new ArrayList<>(ev.problems));
         List<Object> unconnected = new ArrayList<>();
         Map<String, String> reasons = new LinkedHashMap<>();
         for (Map.Entry<Integer, String> u : net.unconnected.entrySet()) {
@@ -204,10 +224,35 @@ public final class GeoJsonExporter {
     }
 
     private Map<String, Object> line(List<Coordinate> coords) {
+        return line(coords, null, null);
+    }
+
+    /**
+     * Линия участка. В режиме с глубиной к координатам добавляется отметка Z (раздел 2 доп. задачи):
+     * поверхность земли Z = 0, глубже - меньше, отметка берётся по верху габарита с линейной
+     * интерполяцией между началом и концом участка.
+     */
+    private Map<String, Object> line(List<Coordinate> coords, Double depthStart, Double depthEnd) {
         Geometry g = projection.toWgs84(ctx.gf.createLineString(coords.toArray(new Coordinate[0])));
         List<Object> cs = new ArrayList<>();
-        for (Coordinate c : g.getCoordinates()) {
-            cs.add(lonLat(c));
+        double total = 0;
+        for (int i = 0; i + 1 < coords.size(); i++) {
+            total += coords.get(i).distance(coords.get(i + 1));
+        }
+        double acc = 0;
+        Coordinate[] src = coords.toArray(new Coordinate[0]);
+        Coordinate[] dst = g.getCoordinates();
+        for (int i = 0; i < dst.length; i++) {
+            if (i > 0 && i < src.length) {
+                acc += src[i - 1].distance(src[i]);
+            }
+            if (depthStart == null) {
+                cs.add(lonLat(dst[i]));
+            } else {
+                double f = total < 1e-9 ? 0 : acc / total;
+                double h = depthStart + (depthEnd - depthStart) * f;
+                cs.add(lonLatZ(dst[i], -h));
+            }
         }
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", "LineString");
@@ -217,6 +262,10 @@ public final class GeoJsonExporter {
 
     private static double[] lonLat(Coordinate c) {
         return new double[] {Math.round(c.x * 1e9) / 1e9, Math.round(c.y * 1e9) / 1e9};
+    }
+
+    private static double[] lonLatZ(Coordinate c, double z) {
+        return new double[] {Math.round(c.x * 1e9) / 1e9, Math.round(c.y * 1e9) / 1e9, Math.round(z * 100) / 100.0};
     }
 
     private static long round(Double v) {
