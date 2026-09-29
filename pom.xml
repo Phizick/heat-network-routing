@@ -13,7 +13,7 @@
 
     <groupId>ru.lct</groupId>
     <artifactId>heat-routing</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>1.2.0</version>
     <name>heat-routing</name>
     <description>Сервис моделирования трасс подключения к тепловым сетям (ЛЦТ-2026)</description>
 
